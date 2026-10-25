@@ -2079,8 +2079,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             List<ShelfContent.Item> items = ShelfContent.load(getContentResolver(), pkg, SHELF_MAX);
             handler.post(() -> {
                 shelfCache.put(pkg, items);
-                // Only for the app still focused, and never under the remote while it is in the row.
-                if (pkg.equals(shelfPackage) && !shelf.hasFocus()) setShelf(items);
+                // Only for the app still focused, never under the remote while it is in the row,
+                // and never over the global Continue Watching row when the JSON file provides one.
+                if (fileShelf.isEmpty() && pkg.equals(shelfPackage) && !shelf.hasFocus()) setShelf(items);
             });
         });
     }
