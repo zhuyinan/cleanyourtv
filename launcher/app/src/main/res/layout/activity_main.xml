@@ -151,7 +151,7 @@
     <HorizontalScrollView
         android:id="@+id/shelf"
         android:layout_width="match_parent"
-        android:layout_height="122dp"
+        android:layout_height="192dp"
         android:visibility="gone"
         android:scrollbars="none"
         android:overScrollMode="never"

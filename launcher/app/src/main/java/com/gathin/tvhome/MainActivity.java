@@ -2023,9 +2023,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     // ---- top shelf content (config.xml top_shelf) -----------------------------------------------------
 
-    private static final int SHELF_CARD_W_DP = 160;
-    private static final int SHELF_CARD_H_DP = 90;
-    private static final int SHELF_HEIGHT_DP = 122;   // activity_main.xml: card, its zoom and the title line
+    private static final int SHELF_CARD_W_DP = 96;
+    private static final int SHELF_CARD_H_DP = 144;
+    private static final int SHELF_HEIGHT_DP = 192;   // activity_main.xml: card (2:3 portrait), its zoom and the title line
     private static final int SHELF_MAX = 12;
 
     /** Where the app name goes: above the dock, or above the shelf when it shows. */
