@@ -146,6 +146,29 @@
             android:visibility="gone" />
     </LinearLayout>
 
+    <!-- Top shelf content (config.xml top_shelf): the focused dock app's Watch Next and channel programs,
+         positioned between its name and the dock in code. -->
+    <HorizontalScrollView
+        android:id="@+id/shelf"
+        android:layout_width="match_parent"
+        android:layout_height="122dp"
+        android:visibility="gone"
+        android:scrollbars="none"
+        android:overScrollMode="never"
+        android:clipToPadding="false"
+        android:clipChildren="false"
+        android:paddingStart="64dp"
+        android:paddingEnd="64dp">
+
+        <LinearLayout
+            android:id="@+id/shelfRow"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:orientation="horizontal"
+            android:clipChildren="false" />
+    </HorizontalScrollView>
+
+
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"

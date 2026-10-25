@@ -33,6 +33,9 @@ import android.media.tv.TvContract;
 import android.media.tv.TvInputInfo;
 import android.media.tv.TvInputManager;
 import android.net.ConnectivityManager;
+import android.graphics.drawable.GradientDrawable;
+import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.NetworkRequest;
@@ -63,6 +66,7 @@ import android.view.Window;
 import android.view.animation.AnimationUtils;
 import android.view.animation.LayoutAnimationController;
 import android.widget.FrameLayout;
+import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.RelativeLayout;
@@ -90,6 +94,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * tvOS style home: black, a pinned dock row, an app grid, and one glass highlight that springs between tiles.
@@ -166,6 +172,22 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private int ambientColor = -1;
     private ValueAnimator ambientAnimator;
     private boolean heroShown;
+    /** config.xml top_shelf (dock_row only): the focused dock app's programs above the dock. */
+    private boolean topShelf;
+    private HorizontalScrollView shelf;
+    private LinearLayout shelfRow;
+    private ShelfImages shelfImages;
+    private ExecutorService shelfLoader;
+    /** Package whose programs the shelf shows or is loading, or null. */
+    private String shelfPackage;
+    /** The shelf is on screen with cards. */
+    private boolean shelfOn;
+    /** Top of the focused dock tile in root coordinates, from the last showHero. */
+    private float shelfDockTop;
+    private int shelfFocusIndex;
+    private final Map<String, List<ShelfContent.Item>> shelfCache = new HashMap<>();
+    /** Packages whose cached shelf is still current; cleared when Home comes back, so the next focus reloads. */
+    private final Set<String> shelfFresh = new HashSet<>();
     private boolean animations;
     private boolean advancedEffects;
     private TextView greeting;
@@ -446,6 +468,13 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         // dock_title false: the name above the dock (and the cinematic lines under it) never shows; the glow
         // still follows the dock.
         if (!cfg.dockTitle) hero.setVisibility(View.GONE);
+        shelf = findViewById(R.id.shelf);
+        shelfRow = findViewById(R.id.shelfRow);
+        topShelf = cfg.topShelf && cfg.dockRow;
+        if (topShelf) {
+            shelfImages = new ShelfImages(getContentResolver(), (int) (SHELF_CARD_W_DP * density));
+            shelfLoader = Executors.newSingleThreadExecutor();
+        }
         greeting = findViewById(R.id.greeting);
         clockBlock = findViewById(R.id.leftBlock);
         greetingColor = greeting.getCurrentTextColor();
@@ -764,8 +793,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             if (event.getAction() != KeyEvent.ACTION_DOWN) return false;
             if (keyCode == KeyEvent.KEYCODE_DPAD_UP) return true;
             if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
-                // Back to the dock tile Up came from, not wherever the focus finder lands.
-                focusTile(singleRow ? lastFocused : lastFocused % COLUMNS);
+                // Back to the shelf or the dock tile Up came from, not wherever the focus finder lands.
+                if (shelfOn) focusShelf();
+                else focusTile(singleRow ? lastFocused : lastFocused % COLUMNS);
                 return true;
             }
             int firstButton = btnInputs.getVisibility() == View.VISIBLE ? R.id.btnInputs : firstTopButton().getId();
@@ -930,6 +960,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
         restartIdleClock();
         promptsPaused = false;
+        shelfFresh.clear();   // programs may have changed while another app was in front
         if (grid.getAdapter() == null) grid.setAdapter(adapter);   // dropped by onTrimMemory
         switch (tileRefresh.onResume(packagesChangedSinceRebuild())) {
             case REBUILD:
@@ -1181,6 +1212,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         super.onWindowFocusChanged(hasFocus);
         if (hasFocus) {
             startPendingSettingsReorder();
+            askForShelfPermission();
             if (libraryFocusPending && appLibrary == null) focusLibrary();
             showCardPrompt();
         }
@@ -1191,6 +1223,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         super.onDestroy();
         unregisterReceiver(packageReceiver);
         wallpaperPlayer.close();
+        if (shelfImages != null) shelfImages.shutdown();
+        if (shelfLoader != null) shelfLoader.shutdownNow();
         ConnectivityManager cm = getSystemService(ConnectivityManager.class);
         TvInputManager tim = (TvInputManager) getSystemService(TV_INPUT_SERVICE);
         if (tim != null) tim.unregisterCallback(inputCallback);
@@ -1691,7 +1725,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private void showHero(int position, float dockTopInRoot) {
         String label = adapter.labelAt(position);
         int color = adapter.ambientColorAt(position);
+        shelfDockTop = dockTopInRoot;
+        updateShelf(position);
         float y = dockTopInRoot - 14 * density - 26 * density - hero.getHeight();
+        if (shelfOn) y -= (SHELF_HEIGHT_DP + 2) * density;   // the shelf sits between the hero and the dock
         boolean changed = !label.contentEquals(heroName.getText());
         if (cinematic && heroArtAlpha > 0f) showHeroArt(position);
 
@@ -1984,7 +2021,235 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }).start();
     }
 
+    // ---- top shelf content (config.xml top_shelf) -----------------------------------------------------
+
+    private static final int SHELF_CARD_W_DP = 160;
+    private static final int SHELF_CARD_H_DP = 90;
+    private static final int SHELF_HEIGHT_DP = 122;   // activity_main.xml: card, its zoom and the title line
+    private static final int SHELF_MAX = 12;
+
+    /** Where the app name goes: above the dock, or above the shelf when it shows. */
+    private float heroY(float dockTop) {
+        float y = dockTop - 40 * density - heroName.getHeight();
+        return shelfOn ? y - (SHELF_HEIGHT_DP + 2) * density : y;
+    }
+
+    /** The dock tile at position has focus: show its app's programs, from the cache at once, then fresh ones. */
+    private void updateShelf(int position) {
+        if (!topShelf) return;
+        String pkg = adapter.packageAt(position);
+        if (pkg == null) {
+            shelfPackage = null;
+            setShelf(null);
+            return;
+        }
+        boolean same = pkg.equals(shelfPackage);
+        shelfPackage = pkg;
+        if (!same) setShelf(shelfCache.get(pkg));
+        else positionShelf();
+        if (!shelfFresh.contains(pkg)) loadShelf(pkg);
+    }
+
+    private void loadShelf(String pkg) {
+        shelfFresh.add(pkg);   // one load at a time per package; cleared again on resume
+        shelfLoader.execute(() -> {
+            List<ShelfContent.Item> items = ShelfContent.load(getContentResolver(), pkg, SHELF_MAX);
+            handler.post(() -> {
+                shelfCache.put(pkg, items);
+                // Only for the app still focused, and never under the remote while it is in the row.
+                if (pkg.equals(shelfPackage) && !shelf.hasFocus()) setShelf(items);
+            });
+        });
+    }
+
+    /** Shows these cards (null or empty: no shelf) and moves the name to match. */
+    private void setShelf(List<ShelfContent.Item> items) {
+        boolean show = items != null && !items.isEmpty();
+        if (show) {
+            bindShelf(items);
+            shelf.scrollTo(0, 0);
+            shelfFocusIndex = 0;
+            if (!shelfOn) {
+                shelf.setVisibility(View.VISIBLE);
+                shelf.setAlpha(0f);
+                shelf.animate().alpha(1f).setDuration(animations ? 200 : 0).start();
+            }
+        } else if (shelfOn) {
+            shelf.animate().cancel();
+            shelf.setVisibility(View.GONE);
+        }
+        shelfOn = show;
+        positionShelf();
+    }
+
+    private void positionShelf() {
+        if (!topShelf) return;
+        if (shelfOn) shelf.setY(shelfDockTop - 26 * density - SHELF_HEIGHT_DP * density);
+        if (heroShown) {
+            // Also while the name is between its fade out and in for a new app: the row can arrive just then.
+            float y = heroY(shelfDockTop);
+            if (animations && !reducedMotion && heroName.getAlpha() > 0f) heroName.animate().y(y).setDuration(180).start();
+            else heroName.setY(y);
+        }
+    }
+
+    private void hideShelf() {
+        if (!topShelf) return;
+        shelfPackage = null;
+        if (!shelfOn) return;
+        shelfOn = false;
+        shelf.animate().cancel();
+        shelf.setVisibility(View.GONE);
+    }
+
+    private void bindShelf(List<ShelfContent.Item> items) {
+        shelfRow.removeAllViews();
+        for (int i = 0; i < items.size(); i++) shelfRow.addView(shelfCard(items.get(i), i, items.size()));
+    }
+
+    /** One program: a 16:9 picture (the title stands in until it loads), a progress line, the title below on focus. */
+    private View shelfCard(ShelfContent.Item item, int index, int count) {
+        int w = (int) (SHELF_CARD_W_DP * density), h = (int) (SHELF_CARD_H_DP * density);
+        LinearLayout column = new LinearLayout(this);
+        column.setOrientation(LinearLayout.VERTICAL);
+        column.setClipChildren(false);
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(w, ViewGroup.LayoutParams.MATCH_PARENT);
+        clp.setMarginEnd((int) (18 * density));
+        column.setLayoutParams(clp);
+
+        FrameLayout card = new FrameLayout(this);
+        LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(w, h);
+        cardLp.topMargin = (int) (6 * density);
+        card.setLayoutParams(cardLp);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(0xFF22252B);
+        bg.setCornerRadius(10 * density);
+        card.setBackground(bg);
+        card.setClipToOutline(true);
+        card.setFocusable(true);
+
+        TextView stand = new TextView(this);
+        stand.setText(item.title);
+        stand.setTextColor(0xB3FFFFFF);
+        stand.setTextSize(14);
+        stand.setGravity(Gravity.CENTER);
+        stand.setPadding((int) (10 * density), 0, (int) (10 * density), 0);
+        stand.setMaxLines(3);
+        stand.setEllipsize(TextUtils.TruncateAt.END);
+        card.addView(stand, new FrameLayout.LayoutParams(w, h));
+
+        ImageView pic = new ImageView(this);
+        pic.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        card.addView(pic, new FrameLayout.LayoutParams(w, h));
+        shelfImages.load(item.image, pic);
+
+        if (item.progress > 0) {
+            View track = new View(this);
+            track.setBackgroundColor(0x66000000);
+            FrameLayout.LayoutParams tlp = new FrameLayout.LayoutParams(w, (int) (4 * density), Gravity.BOTTOM);
+            card.addView(track, tlp);
+            View bar = new View(this);
+            bar.setBackgroundColor(0xFFFFFFFF);
+            card.addView(bar, new FrameLayout.LayoutParams(w * item.progress / 100, (int) (4 * density), Gravity.BOTTOM));
+        }
+
+        GradientDrawable ring = new GradientDrawable();
+        ring.setCornerRadius(10 * density);
+        ring.setStroke((int) (3 * density), 0xFFFFFFFF);
+        ring.setColor(0x00000000);
+
+        TextView title = new TextView(this);
+        title.setText(item.title);
+        title.setTextColor(0xFFFFFFFF);
+        title.setTextSize(14);
+        title.setSingleLine(true);
+        title.setEllipsize(TextUtils.TruncateAt.END);
+        title.setAlpha(0f);
+        LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(w, ViewGroup.LayoutParams.WRAP_CONTENT);
+        titleLp.topMargin = (int) (10 * density);
+        column.addView(card);
+        column.addView(title, titleLp);
+
+        card.setOnFocusChangeListener((v, focused) -> {
+            float scale = focused && animations ? 1.08f : 1f;
+            card.animate().scaleX(scale).scaleY(scale).setDuration(animations ? 140 : 0).start();
+            card.setForeground(focused ? ring : null);
+            title.setAlpha(focused ? 1f : 0f);
+            if (focused) shelfFocusIndex = index;
+        });
+        card.setOnClickListener(v -> openShelfItem(item));
+        card.setOnKeyListener((v, keyCode, event) -> {
+            if (event.getAction() != KeyEvent.ACTION_DOWN) return false;
+            switch (keyCode) {
+                case KeyEvent.KEYCODE_DPAD_DOWN:
+                    focusTile(lastFocused);
+                    return true;
+                case KeyEvent.KEYCODE_DPAD_UP:
+                    View pill = btnInputs.getVisibility() == View.VISIBLE ? btnInputs : findViewById(R.id.btnWifi);
+                    pill.requestFocus();
+                    return true;
+                case KeyEvent.KEYCODE_DPAD_LEFT:
+                    return index == 0;                     // the row's ends do not fall through
+                case KeyEvent.KEYCODE_DPAD_RIGHT:
+                    return index == count - 1;
+                default:
+                    return false;
+            }
+        });
+        return column;
+    }
+
+    private void focusShelf() {
+        int n = shelfRow.getChildCount();
+        if (n == 0) return;
+        View column = shelfRow.getChildAt(Math.max(0, Math.min(shelfFocusIndex, n - 1)));
+        ((ViewGroup) column).getChildAt(0).requestFocus();
+    }
+
+    private static final String READ_TV_LISTINGS = "android.permission.READ_TV_LISTINGS";
+    private static final int SHELF_PERMISSION_REQUEST = 43;
+
+    /** The listings prompt was shown in this process: a dismissed prompt waits for the next start, never loops. */
+    private boolean shelfAskedThisRun;
+
+    /**
+     * Asks for READ_TV_LISTINGS, which other apps' programs need. An answer (Allow or Deny) is final and remembered;
+     * a prompt dismissed without one (Home, the screen going off) is asked again only after the launcher restarts.
+     */
+    private void askForShelfPermission() {
+        if (!topShelf || shelfAskedThisRun
+                || checkSelfPermission(READ_TV_LISTINGS) == PackageManager.PERMISSION_GRANTED) return;
+        if (getSharedPreferences("top_shelf", MODE_PRIVATE).getBoolean("answered", false)) return;
+        shelfAskedThisRun = true;
+        requestPermissions(new String[]{READ_TV_LISTINGS}, SHELF_PERMISSION_REQUEST);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] results) {
+        super.onRequestPermissionsResult(requestCode, permissions, results);
+        if (requestCode != SHELF_PERMISSION_REQUEST || results.length == 0) return;   // dismissed: no answer
+        getSharedPreferences("top_shelf", MODE_PRIVATE).edit().putBoolean("answered", true).apply();
+        if (results[0] != PackageManager.PERMISSION_GRANTED) return;
+        shelfFresh.clear();
+        shelfCache.clear();
+        shelfPackage = null;
+        if (dockRow && lastFocused < COLUMNS) updateShelf(lastFocused);
+    }
+
+    /** Opens a program the way the stock launcher does: the intent its app stored with it. */
+    private void openShelfItem(ShelfContent.Item item) {
+        try {
+            Intent i = Intent.parseUri(item.intentUri, Intent.URI_INTENT_SCHEME);
+            i.setSelector(null);
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(i);
+        } catch (Exception e) {
+            Toast.makeText(this, getString(R.string.cant_open, item.title), Toast.LENGTH_SHORT).show();
+        }
+    }
+
     private void hideHero() {
+        hideShelf();
         if (!heroShown) return;
         stopAmbientAnimation();
         hero.animate().cancel();
@@ -2232,7 +2497,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                     rtlAppGrid, keyCode == KeyEvent.KEYCODE_DPAD_LEFT);
         }
         if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
-            if (position < COLUMNS) return false;          // dock row: let focus move to the top bar
+            if (position < COLUMNS) {
+                if (!shelfOn) return false;                // dock row: let focus move to the top bar
+                focusShelf();
+                grid.playSoundEffect(SoundEffectConstants.NAVIGATION_UP);
+                return true;
+            }
             target = position - COLUMNS;
         } else {
             int lastRowStart = ((count - 1) / COLUMNS) * COLUMNS;

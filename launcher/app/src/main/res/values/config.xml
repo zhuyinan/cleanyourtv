@@ -373,6 +373,13 @@
          "show_stats": true. Nothing is read, and the clock does not move, while this is false. -->
     <bool name="show_stats">false</bool>
 
+    <!-- Top shelf content: while a dock app is focused, a row of its Watch Next entries and channel programs
+         (the ones it publishes to the TV provider for the stock home screen) above the dock. Up from the dock
+         goes into the row, OK opens the program. Their pictures are web links, so this is the launcher's only
+         network use: those pictures, while the row is on screen. false (the default) reads and fetches nothing.
+         A theme can set "top_shelf": true. -->
+    <bool name="top_shelf">false</bool>
+
     <!-- Time-of-day backdrop behind everything: a dark gradient that follows the clock, with a warm
          horizon glow around sunrise and sunset. 0 keeps the plain background (the default); 1 to 100
          sets its opacity. Around 60 reads clearly without hiding a wallpaper. Can also be set with
