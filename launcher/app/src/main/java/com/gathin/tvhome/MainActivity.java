@@ -1728,7 +1728,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         shelfDockTop = dockTopInRoot;
         updateShelf(position);
         float y = dockTopInRoot - 14 * density - 26 * density - hero.getHeight();
-        if (shelfOn) y -= (SHELF_HEIGHT_DP + 2) * density;   // the shelf sits between the hero and the dock
+        final float heroY = shelfOn ? y - (SHELF_HEIGHT_DP + 2) * density : y;   // the shelf sits between the hero and the dock
         boolean changed = !label.contentEquals(heroName.getText());
         if (cinematic && heroArtAlpha > 0f) showHeroArt(position);
 
@@ -1766,7 +1766,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             if (advancedEffects) hero.animate().cancel();
             hero.animate().alpha(0f).translationX(-12 * density).setDuration(120).withEndAction(() -> {
                 fillHero(position, label);
-                hero.setY(y);
+                hero.setY(heroY);
                 hero.setTranslationX(12 * density);
                 hero.animate().alpha(1f).translationX(0f).setDuration(200).start();
             }).start();
@@ -1779,7 +1779,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 }).start();
             }
         } else {
-            hero.setY(y);
+            hero.setY(heroY);
         }
     }
 
