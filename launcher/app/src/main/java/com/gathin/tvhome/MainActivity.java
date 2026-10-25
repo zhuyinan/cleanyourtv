@@ -2111,9 +2111,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private View shelfCard(ShelfContent.Item item, int index, int count) {
         int w = (int) (SHELF_CARD_W_DP * density), h = (int) (SHELF_CARD_H_DP * density);
         LinearLayout column = new LinearLayout(this);
-        column.setOrientation(LinearLayout.VERTICAL);
+        column.setOrientation(LinearLayout.HORIZONTAL);
         column.setClipChildren(false);
-        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(w, ViewGroup.LayoutParams.MATCH_PARENT);
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT);
         clp.setMarginEnd((int) (18 * density));
         column.setLayoutParams(clp);
 
@@ -2158,23 +2158,31 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         ring.setStroke((int) (3 * density), 0xFFFFFFFF);
         ring.setColor(0x00000000);
 
+        LinearLayout texts = new LinearLayout(this);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        texts.setGravity(Gravity.CENTER_VERTICAL);
+        TextView label = new TextView(this);
+        label.setText("继续观看");
+        label.setTextColor(0x99FFFFFF);
+        label.setTextSize(12);
+        label.setSingleLine(true);
         TextView title = new TextView(this);
         title.setText(item.title);
         title.setTextColor(0xFFFFFFFF);
-        title.setTextSize(14);
-        title.setSingleLine(true);
+        title.setTextSize(15);
+        title.setMaxLines(2);
         title.setEllipsize(TextUtils.TruncateAt.END);
-        title.setAlpha(0f);
-        LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(w, ViewGroup.LayoutParams.WRAP_CONTENT);
-        titleLp.topMargin = (int) (10 * density);
+        texts.addView(label);
+        texts.addView(title);
         column.addView(card);
-        column.addView(title, titleLp);
+        LinearLayout.LayoutParams txb = new LinearLayout.LayoutParams((int) (150 * density), ViewGroup.LayoutParams.WRAP_CONTENT);
+        txb.setMarginStart((int) (12 * density));
+        column.addView(texts, txb);
 
         card.setOnFocusChangeListener((v, focused) -> {
             float scale = focused && animations ? 1.08f : 1f;
             card.animate().scaleX(scale).scaleY(scale).setDuration(animations ? 140 : 0).start();
             card.setForeground(focused ? ring : null);
-            title.setAlpha(focused ? 1f : 0f);
             if (focused) shelfFocusIndex = index;
         });
         card.setOnClickListener(v -> openShelfItem(item));
