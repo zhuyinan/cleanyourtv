@@ -1,0 +1,36 @@
+name: Build launcher APK
+
+# 朱总定制线：只编译 launcher 出 APK artifact，不装机（装机走本机 adb）。
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["launcher/**", ".github/workflows/build-launcher.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Launcher APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platforms;android-34 build-tools;34.0.0
+      - name: Build release APK
+        run: |
+          cd launcher
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleRelease
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: launcher-apk
+          path: launcher/app/build/outputs/apk/release/*.apk
+          retention-days: 30
