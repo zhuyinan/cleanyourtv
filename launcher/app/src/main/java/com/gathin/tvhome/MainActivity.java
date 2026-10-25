@@ -2030,7 +2030,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     /** Where the app name goes: above the dock, or above the shelf when it shows. */
     private float heroY(float dockTop) {
-        float y = dockTop - 40 * density - heroName.getHeight();
+        float y = dockTop - 40 * density - hero.getHeight();
         return shelfOn ? y - (SHELF_HEIGHT_DP + 2) * density : y;
     }
 
@@ -2084,12 +2084,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     private void positionShelf() {
         if (!topShelf) return;
-        if (shelfOn) shelf.setY(shelfDockTop - 26 * density - SHELF_HEIGHT_DP * density);
+        if (shelfOn) shelf.setY(shelfDockTop - 34 * density - SHELF_HEIGHT_DP * density);
         if (heroShown) {
             // Also while the name is between its fade out and in for a new app: the row can arrive just then.
             float y = heroY(shelfDockTop);
-            if (animations && !reducedMotion && heroName.getAlpha() > 0f) heroName.animate().y(y).setDuration(180).start();
-            else heroName.setY(y);
+            if (animations && !reducedMotion && hero.getAlpha() > 0f) hero.animate().y(y).setDuration(180).start();
+            else hero.setY(y);
         }
     }
 
