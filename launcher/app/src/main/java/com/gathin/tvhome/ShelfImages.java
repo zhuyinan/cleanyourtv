@@ -64,9 +64,10 @@ final class ShelfImages {
                 bmp = fetch(uri);
             }
             if (bmp == null) return;
-            cache.put(uri, bmp);
+            final Bitmap loaded = bmp;
+            cache.put(uri, loaded);
             main.post(() -> {
-                if (uri.equals(view.getTag())) view.setImageBitmap(bmp);
+                if (uri.equals(view.getTag())) view.setImageBitmap(loaded);
             });
         });
     }
