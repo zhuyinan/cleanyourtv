@@ -636,10 +636,6 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         return position >= 0 && position < items.size() ? items.get(position).label : "";
     }
 
-    String packageAt(int position) {
-        return position >= 0 && position < items.size() ? items.get(position).pkg : null;
-    }
-
     /** The tile's artwork, its banner or else its icon, for the cinematic shelf's backdrop (HeroArt). */
     Drawable artworkAt(int position) {
         if (position < 0 || position >= items.size()) return null;
