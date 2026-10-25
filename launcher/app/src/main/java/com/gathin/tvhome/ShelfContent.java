@@ -72,10 +72,14 @@ final class ShelfContent {
                 String key = o.optString("key", null);
                 if (title == null || title.isEmpty() || key == null || key.isEmpty()) continue;
                 String poster = o.optString("poster", null);
+                String name = o.optString("name", null);
                 int progress = o.optInt("progress", -1);
                 long time = o.optLong("time", 0);
-                Uri deep = new Uri.Builder().scheme("webhtv").authority("detail")
-                        .appendQueryParameter("key", key).build();
+                Uri.Builder ub = new Uri.Builder().scheme("webhtv").authority("detail")
+                        .appendQueryParameter("key", key);
+                if (name != null && !name.isEmpty()) ub.appendQueryParameter("name", name);
+                if (poster != null) ub.appendQueryParameter("pic", poster);
+                Uri deep = ub.build();
                 String intent = "intent:#Intent;component=com.fongmi.android.tv/.ui.activity.DeepLinkActivity;"
                         + "S.data=" + URLEncoder.encode(deep.toString(), "UTF-8") + ";end";
                 rows.add(new Object[]{new Item(title, poster, intent, progress), time});
