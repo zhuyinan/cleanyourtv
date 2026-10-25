@@ -474,7 +474,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         shelfRow = findViewById(R.id.shelfRow);
         topShelf = cfg.topShelf && cfg.dockRow;
         if (topShelf) {
-            shelfImages = new ShelfImages(getContentResolver(), (int) (SHELF_CARD_W_DP * density));
+            shelfImages = new ShelfImages(getContentResolver(), (int) (SHELF_CARD_W_DP * density), this);
             shelfLoader = Executors.newSingleThreadExecutor();
         }
         greeting = findViewById(R.id.greeting);

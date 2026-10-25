@@ -40,9 +40,12 @@ final class ShelfImages {
         }
     };
 
-    ShelfImages(ContentResolver resolver, int targetWidthPx) {
+    private final android.content.Context ctx;
+
+    ShelfImages(ContentResolver resolver, int targetWidthPx, android.content.Context ctx) {
         this.resolver = resolver;
         this.targetWidth = targetWidthPx;
+        this.ctx = ctx.getApplicationContext();
     }
 
     /** Shows uri in view, now from the cache or later from a background load. The view's tag guards reuse. */
@@ -56,7 +59,7 @@ final class ShelfImages {
             return;
         }
         pool.execute(() -> {
-            Bitmap bmp = null;
+            Bitmap bmp = diskGet(uri);   // posters come from flaky VOD CDNs: once fetched, never again
             // VOD image CDNs drop TLS handshakes at random: try a few times before giving up,
             // and remember the failure briefly so a card that is re-bound does not hammer the host.
             for (int attempt = 0; attempt < 3 && bmp == null; attempt++) {
@@ -66,6 +69,7 @@ final class ShelfImages {
             if (bmp == null) return;
             final Bitmap loaded = bmp;
             cache.put(uri, loaded);
+            diskPut(uri, loaded);
             main.post(() -> {
                 if (uri.equals(view.getTag())) view.setImageBitmap(loaded);
             });
@@ -135,5 +139,30 @@ final class ShelfImages {
             if (out.size() > MAX_BYTES) return null;
         }
         return out.toByteArray();
+    }
+    /** Simple disk cache under filesDir/shelf-pics: hashed name, plain PNG. Survives restarts and dead CDNs. */
+    private Bitmap diskGet(String uri) {
+        try {
+            java.io.File f = new java.io.File(new java.io.File(ctx.getFilesDir(), "shelf-pics"),
+                    Integer.toHexString(uri.hashCode()) + ".png");
+            if (!f.isFile()) return null;
+            Bitmap bmp = android.graphics.BitmapFactory.decodeFile(f.getAbsolutePath());
+            return bmp;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private void diskPut(String uri, Bitmap bmp) {
+        try {
+            java.io.File dir = new java.io.File(ctx.getFilesDir(), "shelf-pics");
+            if (!dir.isDirectory() && !dir.mkdirs()) return;
+            java.io.File f = new java.io.File(dir, Integer.toHexString(uri.hashCode()) + ".png");
+            if (f.isFile()) return;   // already cached
+            try (java.io.FileOutputStream out = new java.io.FileOutputStream(f)) {
+                bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out);
+            }
+        } catch (Exception ignored) {
+        }
     }
 }
