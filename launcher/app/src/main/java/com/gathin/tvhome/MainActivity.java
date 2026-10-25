@@ -2123,7 +2123,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         card.setLayoutParams(cardLp);
         GradientDrawable bg = new GradientDrawable();
         bg.setColor(0xFF22252B);
-        bg.setCornerRadius(10 * density);
+        bg.setCornerRadius(12 * density);
         card.setBackground(bg);
         card.setClipToOutline(true);
         card.setFocusable(true);
@@ -2154,7 +2154,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
 
         GradientDrawable ring = new GradientDrawable();
-        ring.setCornerRadius(10 * density);
+        ring.setCornerRadius(12 * density);
         ring.setStroke((int) (3 * density), 0xFFFFFFFF);
         ring.setColor(0x00000000);
 
@@ -2169,13 +2169,23 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         TextView title = new TextView(this);
         title.setText(item.title);
         title.setTextColor(0xFFFFFFFF);
-        title.setTextSize(15);
+        title.setTextSize(16);
+        title.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
         title.setMaxLines(2);
         title.setEllipsize(TextUtils.TruncateAt.END);
         texts.addView(label);
         texts.addView(title);
+        if (item.progress > 0) {
+            TextView pct = new TextView(this);
+            pct.setText("已看 " + item.progress + "%");
+            pct.setTextColor(0xB3FFFFFF);
+            pct.setTextSize(12);
+            LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            plp.topMargin = (int) (4 * density);
+            texts.addView(pct, plp);
+        }
         column.addView(card);
-        LinearLayout.LayoutParams txb = new LinearLayout.LayoutParams((int) (150 * density), ViewGroup.LayoutParams.WRAP_CONTENT);
+        LinearLayout.LayoutParams txb = new LinearLayout.LayoutParams((int) (160 * density), ViewGroup.LayoutParams.WRAP_CONTENT);
         txb.setMarginStart((int) (12 * density));
         column.addView(texts, txb);
 

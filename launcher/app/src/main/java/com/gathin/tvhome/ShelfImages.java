@@ -56,7 +56,13 @@ final class ShelfImages {
             return;
         }
         pool.execute(() -> {
-            Bitmap bmp = fetch(uri);
+            Bitmap bmp = null;
+            // VOD image CDNs drop TLS handshakes at random: try a few times before giving up,
+            // and remember the failure briefly so a card that is re-bound does not hammer the host.
+            for (int attempt = 0; attempt < 3 && bmp == null; attempt++) {
+                if (attempt > 0) try { Thread.sleep(700); } catch (InterruptedException e) { return; }
+                bmp = fetch(uri);
+            }
             if (bmp == null) return;
             cache.put(uri, bmp);
             main.post(() -> {
