@@ -1,6 +1,14 @@
 package com.gathin.tvhome;
 
 import android.content.ContentResolver;
+import android.net.Uri;
+
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.net.URLEncoder;
+import org.json.JSONArray;
+import org.json.JSONObject;
 import android.database.Cursor;
 import android.media.tv.TvContract;
 import android.util.Log;
@@ -38,6 +46,48 @@ final class ShelfContent {
     }
 
     private ShelfContent() {
+    }
+
+    /**
+     * The global Continue Watching row, from the JSON file webhtv (or any app that adopts the format) keeps in our
+     * external files dir: {"items":[{title, poster, progress, key, time}, ...]}. Sorted by time, newest first, at
+     * most max cards. Each card opens the app's detail page through its DeepLinkActivity, so resume, next episode
+     * and source switching stay native. A missing or broken file gives an empty list, never a crash.
+     */
+    static List<Item> loadFile(File file, int max) {
+        List<Item> items = new ArrayList<>();
+        if (file == null || !file.isFile()) return items;
+        try (FileInputStream in = new FileInputStream(file)) {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buf = new byte[8192];
+            for (int n; (n = in.read(buf)) > 0; ) out.write(buf, 0, n);
+            JSONObject root = new JSONObject(out.toString("UTF-8"));
+            JSONArray arr = root.optJSONArray("items");
+            if (arr == null) return items;
+            List<Object[]> rows = new ArrayList<>();   // {Item, time}
+            for (int i = 0; i < arr.length(); i++) {
+                JSONObject o = arr.optJSONObject(i);
+                if (o == null) continue;
+                String title = o.optString("title", null);
+                String key = o.optString("key", null);
+                if (title == null || title.isEmpty() || key == null || key.isEmpty()) continue;
+                String poster = o.optString("poster", null);
+                int progress = o.optInt("progress", -1);
+                long time = o.optLong("time", 0);
+                Uri deep = new Uri.Builder().scheme("webhtv").authority("detail")
+                        .appendQueryParameter("key", key).build();
+                String intent = "intent:#Intent;component=com.fongmi.android.tv/.ui.activity.DeepLinkActivity;"
+                        + "S.data=" + URLEncoder.encode(deep.toString(), "UTF-8") + ";end";
+                rows.add(new Object[]{new Item(title, poster, intent, progress), time});
+            }
+            rows.sort((a, b) -> Long.compare((Long) b[1], (Long) a[1]));
+            Set<String> seen = new HashSet<>();
+            for (Object[] r : rows) if (items.size() < max && seen.add(((Item) r[0]).intentUri)) items.add((Item) r[0]);
+        } catch (Exception e) {   // missing file, bad JSON: fall back to the Watch Next shelf
+            Log.w(TAG, "cannot read " + file + ": " + e);
+        }
+        Log.d(TAG, "file shelf: " + items.size() + " cards");
+        return items;
     }
 
     // Columns 0-6 are shared by Watch Next and preview programs; 7-8 differ and are named per query.

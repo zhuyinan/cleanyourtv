@@ -178,6 +178,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private LinearLayout shelfRow;
     private ShelfImages shelfImages;
     private ExecutorService shelfLoader;
+    private long fileShelfStamp = -2;   // mtime of the JSON when last read; -2 forces the first read
+    private List<ShelfContent.Item> fileShelf = java.util.Collections.emptyList();
     /** Package whose programs the shelf shows or is loading, or null. */
     private String shelfPackage;
     /** The shelf is on screen with cards. */
@@ -960,7 +962,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
         restartIdleClock();
         promptsPaused = false;
-        shelfFresh.clear();   // programs may have changed while another app was in front
+        shelfFresh.clear();
+        fileShelfStamp = -2;   // re-read the JSON every time Home comes back: watching something updates the row   // programs may have changed while another app was in front
         if (grid.getAdapter() == null) grid.setAdapter(adapter);   // dropped by onTrimMemory
         switch (tileRefresh.onResume(packagesChangedSinceRebuild())) {
             case REBUILD:
@@ -2026,7 +2029,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private static final int SHELF_CARD_W_DP = 96;
     private static final int SHELF_CARD_H_DP = 144;
     private static final int SHELF_HEIGHT_DP = 192;   // activity_main.xml: card (2:3 portrait), its zoom and the title line
-    private static final int SHELF_MAX = 12;
+    private static final int SHELF_MAX = 3;   // the row shows the three most recently watched things
 
     /** Where the app name goes: above the dock, or above the shelf when it shows. */
     private float heroY(float dockTop) {
@@ -2037,6 +2040,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     /** The dock tile at position has focus: show its app's programs, from the cache at once, then fresh ones. */
     private void updateShelf(int position) {
         if (!topShelf) return;
+        refreshFileShelf();
+        if (!fileShelf.isEmpty()) {   // the global Continue Watching row: shown whatever app the dock focuses
+            if (!shelf.hasFocus()) setShelf(fileShelf);
+            return;
+        }
         String pkg = adapter.packageAt(position);
         if (pkg == null) {
             shelfPackage = null;
@@ -2048,6 +2056,21 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (!same) setShelf(shelfCache.get(pkg));
         else positionShelf();
         if (!shelfFresh.contains(pkg)) loadShelf(pkg);
+    }
+
+    /** Reads the global JSON shelf when the file changed; keeps fileShelf and rebinds the row on the main thread. */
+    private void refreshFileShelf() {
+        java.io.File f = new java.io.File(getExternalFilesDir(null), "webhtv-history.json");
+        long stamp = f.lastModified();
+        if (stamp == fileShelfStamp) return;
+        fileShelfStamp = stamp;
+        shelfLoader.execute(() -> {
+            List<ShelfContent.Item> items = ShelfContent.loadFile(f, SHELF_MAX);
+            handler.post(() -> {
+                fileShelf = items;
+                if (!items.isEmpty() && !shelf.hasFocus()) setShelf(items);   // empty: leave the per-app row; next updateShelf decides
+            });
+        });
     }
 
     private void loadShelf(String pkg) {
@@ -2249,6 +2272,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         getSharedPreferences("top_shelf", MODE_PRIVATE).edit().putBoolean("answered", true).apply();
         if (results[0] != PackageManager.PERMISSION_GRANTED) return;
         shelfFresh.clear();
+        fileShelfStamp = -2;   // re-read the JSON every time Home comes back: watching something updates the row
         shelfCache.clear();
         shelfPackage = null;
         if (dockRow && lastFocused < COLUMNS) updateShelf(lastFocused);
