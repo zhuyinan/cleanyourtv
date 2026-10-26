@@ -177,6 +177,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private HorizontalScrollView shelf;
     private LinearLayout shelfRow;
     private ShelfImages shelfImages;
+    /** Loads the hero card's art at the hero size (bigger than the rail cards). */
+    private ShelfImages heroImages;
     private ExecutorService shelfLoader;
     private long fileShelfStamp = -2;   // mtime of the JSON when last read; -2 forces the first read
     private List<ShelfContent.Item> fileShelf = java.util.Collections.emptyList();
@@ -184,6 +186,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private String shelfPackage;
     /** The shelf is on screen with cards. */
     private boolean shelfOn;
+    /** The shelf shows the Apple-style single hero card (the global Continue Watching row), not the 3-card rail. */
+    private boolean shelfHero;
+    /** Items behind the hero card; left/right on the remote cycles through them. */
+    private List<ShelfContent.Item> heroItems = java.util.Collections.emptyList();
+    private int heroIndex;
     /** Top of the focused dock tile in root coordinates, from the last showHero. */
     private float shelfDockTop;
     private int shelfFocusIndex;
@@ -475,6 +482,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         topShelf = cfg.topShelf && cfg.dockRow;
         if (topShelf) {
             shelfImages = new ShelfImages(getContentResolver(), (int) (SHELF_CARD_W_DP * density), this);
+            heroImages = new ShelfImages(getContentResolver(), (int) (HERO_CARD_W_DP * density), this);
             shelfLoader = Executors.newSingleThreadExecutor();
         }
         greeting = findViewById(R.id.greeting);
@@ -1227,6 +1235,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         unregisterReceiver(packageReceiver);
         wallpaperPlayer.close();
         if (shelfImages != null) shelfImages.shutdown();
+        if (heroImages != null) heroImages.shutdown();
         if (shelfLoader != null) shelfLoader.shutdownNow();
         ConnectivityManager cm = getSystemService(ConnectivityManager.class);
         TvInputManager tim = (TvInputManager) getSystemService(TV_INPUT_SERVICE);
@@ -2028,13 +2037,16 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     private static final int SHELF_CARD_W_DP = 96;
     private static final int SHELF_CARD_H_DP = 144;
-    private static final int SHELF_HEIGHT_DP = 192;   // activity_main.xml: card (2:3 portrait), its zoom and the title line
-    private static final int SHELF_MAX = 3;   // the row shows the three most recently watched things
+    private static final int SHELF_HEIGHT_DP = 192;   // the 3-card rail: card (2:3 portrait), its zoom and the title line
+    private static final int HERO_CARD_W_DP = 440;
+    private static final int HERO_CARD_H_DP = 247;   // 16:9, like Apple TV's Up Next single-card mode
+    private static final int HERO_SHELF_HEIGHT_DP = 278;   // hero card + the dots line under it
+    private static final int SHELF_MAX = 5;   // the hero cycles through the five most recently watched things
 
     /** Where the app name goes: above the dock, or above the shelf when it shows. */
     private float heroY(float dockTop) {
         float y = dockTop - 40 * density - hero.getHeight();
-        return shelfOn ? y - (SHELF_HEIGHT_DP + 2) * density : y;
+        return shelfOn ? y - (shelfHeightDp() + 2) * density : y;
     }
 
     /** The dock tile at position has focus: show its app's programs, from the cache at once, then fresh ones. */
@@ -2042,18 +2054,18 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (!topShelf) return;
         refreshFileShelf();
         if (!fileShelf.isEmpty()) {   // the global Continue Watching row: shown whatever app the dock focuses
-            if (!shelf.hasFocus()) setShelf(fileShelf);
+            if (!shelf.hasFocus()) setShelf(fileShelf, true);
             return;
         }
         String pkg = adapter.packageAt(position);
         if (pkg == null) {
             shelfPackage = null;
-            setShelf(null);
+            setShelf(null, false);
             return;
         }
         boolean same = pkg.equals(shelfPackage);
         shelfPackage = pkg;
-        if (!same) setShelf(shelfCache.get(pkg));
+        if (!same) setShelf(shelfCache.get(pkg), false);
         else positionShelf();
         if (!shelfFresh.contains(pkg)) loadShelf(pkg);
     }
@@ -2068,7 +2080,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             List<ShelfContent.Item> items = ShelfContent.loadFile(f, SHELF_MAX);
             handler.post(() -> {
                 fileShelf = items;
-                if (!items.isEmpty() && !shelf.hasFocus()) setShelf(items);   // empty: leave the per-app row; next updateShelf decides
+                if (!items.isEmpty() && !shelf.hasFocus()) setShelf(items, true);   // empty: leave the per-app row; next updateShelf decides
             });
         });
     }
@@ -2081,18 +2093,29 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 shelfCache.put(pkg, items);
                 // Only for the app still focused, never under the remote while it is in the row,
                 // and never over the global Continue Watching row when the JSON file provides one.
-                if (fileShelf.isEmpty() && pkg.equals(shelfPackage) && !shelf.hasFocus()) setShelf(items);
+                if (fileShelf.isEmpty() && pkg.equals(shelfPackage) && !shelf.hasFocus()) setShelf(items, false);
             });
         });
     }
 
-    /** Shows these cards (null or empty: no shelf) and moves the name to match. */
-    private void setShelf(List<ShelfContent.Item> items) {
+    /** The shelf's height on screen: the hero card is taller than the 3-card rail. */
+    private int shelfHeightDp() {
+        return shelfHero ? HERO_SHELF_HEIGHT_DP : SHELF_HEIGHT_DP;
+    }
+
+    /** Shows these cards (null or empty: no shelf) and moves the name to match. hero: the single big card. */
+    private void setShelf(List<ShelfContent.Item> items, boolean hero) {
         boolean show = items != null && !items.isEmpty();
+        if (show && shelfHero != hero) {   // the container height follows the mode
+            shelfHero = hero;
+            shelf.getLayoutParams().height = (int) (shelfHeightDp() * density);
+            shelf.requestLayout();
+        } else if (show) shelfHero = hero;
         if (show) {
-            bindShelf(items);
+            bindShelf(items, hero);
             shelf.scrollTo(0, 0);
             shelfFocusIndex = 0;
+            if (hero) heroIndex = 0;
             if (!shelfOn) {
                 shelf.setVisibility(View.VISIBLE);
                 shelf.setAlpha(0f);
@@ -2108,7 +2131,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     private void positionShelf() {
         if (!topShelf) return;
-        if (shelfOn) shelf.setY(shelfDockTop - 34 * density - SHELF_HEIGHT_DP * density);
+        if (shelfOn) shelf.setY(shelfDockTop - 34 * density - shelfHeightDp() * density);
         if (heroShown) {
             // Also while the name is between its fade out and in for a new app: the row can arrive just then.
             float y = heroY(shelfDockTop);
@@ -2126,9 +2149,177 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         shelf.setVisibility(View.GONE);
     }
 
-    private void bindShelf(List<ShelfContent.Item> items) {
+    private void bindShelf(List<ShelfContent.Item> items, boolean hero) {
         shelfRow.removeAllViews();
+        if (hero) {
+            heroItems = items;
+            shelfRow.addView(heroCard());
+            return;
+        }
+        heroItems = java.util.Collections.emptyList();
         for (int i = 0; i < items.size(); i++) shelfRow.addView(shelfCard(items.get(i), i, items.size()));
+    }
+
+    /** The focused hero card's views, rebound in place when left/right cycles to another item. */
+    private ImageView heroPic;
+    private TextView heroStand, heroTitle, heroLine;
+    private View heroBar;
+    private LinearLayout heroDots;
+
+    /** Apple-style Continue Watching: one 16:9 card, the title/episode/progress inside its lower veil, dots below. */
+    private View heroCard() {
+        int w = (int) (HERO_CARD_W_DP * density), h = (int) (HERO_CARD_H_DP * density);
+        LinearLayout column = new LinearLayout(this);
+        column.setOrientation(LinearLayout.VERTICAL);
+        column.setClipChildren(false);
+        column.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        FrameLayout card = new FrameLayout(this);
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(w, h);
+        clp.topMargin = (int) (6 * density);
+        card.setLayoutParams(clp);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(0xFF22252B);
+        bg.setCornerRadius(16 * density);
+        card.setBackground(bg);
+        card.setClipToOutline(true);
+        card.setFocusable(true);
+
+        heroStand = new TextView(this);
+        heroStand.setTextColor(0xB3FFFFFF);
+        heroStand.setTextSize(18);
+        heroStand.setGravity(Gravity.CENTER);
+        heroStand.setPadding((int) (16 * density), 0, (int) (16 * density), 0);
+        heroStand.setMaxLines(2);
+        heroStand.setEllipsize(TextUtils.TruncateAt.END);
+        card.addView(heroStand, new FrameLayout.LayoutParams(w, h));
+
+        heroPic = new ImageView(this);
+        heroPic.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        card.addView(heroPic, new FrameLayout.LayoutParams(w, h));
+
+        View veil = new View(this);
+        GradientDrawable veilBg = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{0x00000000, 0x80095115, 0xE60A0C12});
+        veil.setBackground(veilBg);
+        card.addView(veil, new FrameLayout.LayoutParams(w, (int) (104 * density), Gravity.BOTTOM));
+
+        LinearLayout meta = new LinearLayout(this);
+        meta.setOrientation(LinearLayout.VERTICAL);
+        FrameLayout.LayoutParams mlp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM | Gravity.START);
+        mlp.leftMargin = (int) (18 * density);
+        mlp.bottomMargin = (int) (14 * density);
+        meta.setLayoutParams(mlp);
+        heroTitle = new TextView(this);
+        heroTitle.setTextColor(0xFFFFFFFF);
+        heroTitle.setTextSize(20);
+        heroTitle.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
+        heroTitle.setMaxLines(1);
+        heroTitle.setEllipsize(TextUtils.TruncateAt.END);
+        meta.addView(heroTitle);
+        heroLine = new TextView(this);
+        heroLine.setTextColor(0xFFCFD6E4);
+        heroLine.setTextSize(13);
+        heroLine.setMaxLines(1);
+        LinearLayout.LayoutParams llp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        llp.topMargin = (int) (5 * density);
+        meta.addView(heroLine, llp);
+        LinearLayout track = new LinearLayout(this);
+        track.setOrientation(LinearLayout.HORIZONTAL);
+        View trackBg = new View(this);
+        trackBg.setBackgroundColor(0x47FFFFFF);
+        LinearLayout.LayoutParams tblp = new LinearLayout.LayoutParams((int) (220 * density), (int) (4 * density));
+        track.addView(trackBg, tblp);
+        heroBar = new View(track.getContext());
+        heroBar.setBackgroundColor(0xFFFFFFFF);
+        LinearLayout.LayoutParams brlp = new LinearLayout.LayoutParams(0, (int) (4 * density));
+        track.addView(heroBar, brlp);
+        LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        tlp.topMargin = (int) (9 * density);
+        meta.addView(track, tlp);
+        card.addView(meta);
+        column.addView(card);
+
+        heroDots = new LinearLayout(this);
+        LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        dlp.topMargin = (int) (9 * density);
+        dlp.leftMargin = (int) (4 * density);
+        heroDots.setLayoutParams(dlp);
+        heroDots.setOrientation(LinearLayout.HORIZONTAL);
+        column.addView(heroDots);
+
+        GradientDrawable ring = new GradientDrawable();
+        ring.setCornerRadius(16 * density);
+        ring.setStroke((int) (3 * density), 0xFFFFFFFF);
+        ring.setColor(0x00000000);
+        card.setOnFocusChangeListener((v, focused) -> {
+            float scale = focused && animations ? 1.04f : 1f;
+            card.animate().scaleX(scale).scaleY(scale).setDuration(animations ? 140 : 0).start();
+            card.setForeground(focused ? ring : null);
+        });
+        card.setOnClickListener(v -> {
+            if (!heroItems.isEmpty()) openShelfItem(heroItems.get(heroIndex));
+        });
+        card.setOnKeyListener((v, keyCode, event) -> {
+            if (event.getAction() != KeyEvent.ACTION_DOWN) return false;
+            switch (keyCode) {
+                case KeyEvent.KEYCODE_DPAD_DOWN:
+                    focusTile(lastFocused);
+                    return true;
+                case KeyEvent.KEYCODE_DPAD_UP:
+                    View pill = btnInputs.getVisibility() == View.VISIBLE ? btnInputs : findViewById(R.id.btnWifi);
+                    pill.requestFocus();
+                    return true;
+                case KeyEvent.KEYCODE_DPAD_LEFT:
+                case KeyEvent.KEYCODE_DPAD_RIGHT:
+                    if (heroItems.size() < 2) return true;   // nothing to cycle
+                    heroIndex = (heroIndex + (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT ? 1 : heroItems.size() - 1)) % heroItems.size();
+                    bindHero();
+                    return true;
+                default:
+                    return false;
+            }
+        });
+        heroIndex = Math.max(0, Math.min(heroIndex, items0Safe()));
+        bindHero();
+        return column;
+    }
+
+    private int items0Safe() {
+        return heroItems.size() - 1;
+    }
+
+    /** Puts the current item's art, title, episode/progress and dots into the hero card. */
+    private void bindHero() {
+        if (heroItems.isEmpty() || heroPic == null) return;
+        ShelfContent.Item item = heroItems.get(heroIndex);
+        String name = item.title, ep = null;
+        int dot = item.title.indexOf('·');
+        if (dot > 0) {
+            name = item.title.substring(0, dot);
+            ep = item.title.substring(dot + 1);
+        }
+        heroStand.setText(name);
+        heroTitle.setText(name);
+        heroLine.setText(item.progress > 0 ? (ep != null ? ep + " · 已看 " + item.progress + "%" : "已看 " + item.progress + "%") : (ep != null ? ep : ""));
+        heroPic.setImageDrawable(null);
+        heroImages.load(item.image, heroPic);
+        heroPic.animate().alpha(0f).setDuration(0).start();
+        heroPic.animate().alpha(1f).setDuration(animations ? 160 : 0).start();
+        LinearLayout.LayoutParams brlp = (LinearLayout.LayoutParams) heroBar.getLayoutParams();
+        brlp.width = (int) (220 * density * Math.max(0, Math.min(100, item.progress)) / 100f);
+        heroBar.setLayoutParams(brlp);
+        heroDots.removeAllViews();
+        for (int i = 0; i < heroItems.size(); i++) {
+            View d = new View(this);
+            GradientDrawable dd = new GradientDrawable();
+            dd.setShape(GradientDrawable.OVAL);
+            dd.setColor(i == heroIndex ? 0xFFFFFFFF : 0x47FFFFFF);
+            LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams((int) (7 * density), (int) (7 * density));
+            if (i > 0) plp.leftMargin = (int) (7 * density);
+            d.setBackground(dd);
+            heroDots.addView(d, plp);
+        }
     }
 
     /** One program: a 16:9 picture (the title stands in until it loads), a progress line, the title below on focus. */
