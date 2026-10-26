@@ -101,8 +101,8 @@ final class ShelfImages {
             if (base == null) return;
             cache.put(uri, base);
             diskPut(uri, base);
-            Bitmap out = blur(base, blurRadius);
-            if (out == null) out = base;
+            Bitmap blurred = blur(base, blurRadius);
+            final Bitmap out = blurred == null ? base : blurred;
             cache.put(key, out);
             main.post(() -> {
                 if (key.equals(view.getTag())) view.setImageBitmap(out);
