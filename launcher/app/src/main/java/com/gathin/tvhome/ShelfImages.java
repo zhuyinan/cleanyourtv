@@ -76,6 +76,59 @@ final class ShelfImages {
         });
     }
 
+    /** Shows uri in view, optionally blurred for the hero card's backdrop; blurred copies are cached per radius. */
+    void load(String uri, ImageView view, int blurRadius) {
+        if (blurRadius <= 0) {
+            load(uri, view);
+            return;
+        }
+        String key = uri == null ? null : uri + "#blur" + blurRadius;
+        view.setTag(key);
+        view.setImageDrawable(null);
+        if (uri == null) return;
+        Bitmap hit = cache.get(key);
+        if (hit != null) {
+            view.setImageBitmap(hit);
+            return;
+        }
+        pool.execute(() -> {
+            Bitmap base = cache.get(uri);
+            if (base == null) base = diskGet(uri);
+            for (int attempt = 0; attempt < 3 && base == null; attempt++) {
+                if (attempt > 0) try { Thread.sleep(700); } catch (InterruptedException e) { return; }
+                base = fetch(uri);
+            }
+            if (base == null) return;
+            cache.put(uri, base);
+            diskPut(uri, base);
+            Bitmap out = blur(base, blurRadius);
+            if (out == null) out = base;
+            cache.put(key, out);
+            main.post(() -> {
+                if (key.equals(view.getTag())) view.setImageBitmap(out);
+            });
+        });
+    }
+
+    /** Gaussian blur through RenderScript; a null return just means "use it unblurred". */
+    private Bitmap blur(Bitmap in, int radius) {
+        try {
+            android.renderscript.RenderScript rs = android.renderscript.RenderScript.create(ctx);
+            Bitmap out = Bitmap.createBitmap(in.getWidth(), in.getHeight(), Bitmap.Config.ARGB_8888);
+            android.renderscript.Allocation inAlloc = android.renderscript.Allocation.createFromBitmap(rs, in);
+            android.renderscript.Allocation outAlloc = android.renderscript.Allocation.createFromBitmap(rs, out);
+            android.renderscript.ScriptIntrinsicBlur script = android.renderscript.ScriptIntrinsicBlur.create(rs, android.renderscript.Element.U8_4(rs));
+            script.setRadius(Math.max(1, Math.min(25, radius)));
+            script.setInput(inAlloc);
+            script.forEach(outAlloc);
+            outAlloc.copyTo(out);
+            rs.destroy();
+            return out;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
     void shutdown() {
         pool.shutdownNow();
         cache.evictAll();

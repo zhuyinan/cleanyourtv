@@ -188,6 +188,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private boolean shelfOn;
     /** The shelf shows the Apple-style single hero card (the global Continue Watching row), not the 3-card rail. */
     private boolean shelfHero;
+    /** shelf_style from config.json: hero (default) | rail3 (portrait 3-card) | row5 (Fire-TV portrait row). */
+    private String shelfStyleName = "hero";
+    private int heroBlurRadius = HERO_BLUR_DEFAULT;
+    private long shelfStyleStamp = -2;
+    private String shelfStyleFile;
     /** Items behind the hero card; left/right on the remote cycles through them. */
     private List<ShelfContent.Item> heroItems = java.util.Collections.emptyList();
     private int heroIndex;
@@ -2038,10 +2043,13 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private static final int SHELF_CARD_W_DP = 96;
     private static final int SHELF_CARD_H_DP = 144;
     private static final int SHELF_HEIGHT_DP = 192;   // the 3-card rail: card (2:3 portrait), its zoom and the title line
-    private static final int HERO_CARD_W_DP = 440;
-    private static final int HERO_CARD_H_DP = 247;   // 16:9, like Apple TV's Up Next single-card mode
-    private static final int HERO_SHELF_HEIGHT_DP = 278;   // hero card + the dots line under it
-    private static final int SHELF_MAX = 5;   // the hero cycles through the five most recently watched things
+    private static final int HERO_CARD_W_DP = 620;
+    private static final int HERO_CARD_H_DP = 235;   // a wide banner: blurred art behind, the poster standing on the right
+    private static final int HERO_POSTER_W_DP = 145;
+    private static final int HERO_POSTER_H_DP = 218;   // 2:3 portrait, vertically centred and fully visible
+    private static final int HERO_SHELF_HEIGHT_DP = 265;   // hero card + the dots line under it
+    private static final int SHELF_MAX = 5;   // the shelf shows at most the five most recently watched things
+    private static final int HERO_BLUR_DEFAULT = 12;   // config.json hero_blur: 0-25, small enough to still recognise the art
 
     /** Where the app name goes: above the dock, or above the shelf when it shows. */
     private float heroY(float dockTop) {
@@ -2098,9 +2106,27 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         });
     }
 
-    /** The shelf's height on screen: the hero card is taller than the 3-card rail. */
+    /** The shelf's height on screen: the hero card is taller than the rails. */
     private int shelfHeightDp() {
-        return shelfHero ? HERO_SHELF_HEIGHT_DP : SHELF_HEIGHT_DP;
+        if (!shelfHero) return SHELF_HEIGHT_DP;
+        if ("rail3".equals(shelfStyleName)) return SHELF_HEIGHT_DP;
+        return "row5".equals(shelfStyleName) ? 212 : HERO_SHELF_HEIGHT_DP;
+    }
+
+    /** Reads shelf_style / hero_blur from config.json (mtime-cached; the file is tiny and read only at bind time). */
+    private void refreshShelfStyle() {
+        try {
+            java.io.File f = new java.io.File(getExternalFilesDir(null), "config.json");
+            if (f == null || f.lastModified() == shelfStyleStamp && shelfStyleFile != null) return;
+            shelfStyleStamp = f.lastModified();
+            org.json.JSONObject o = new org.json.JSONObject(new String(java.nio.file.Files.readAllBytes(f.toPath()), "UTF-8"));
+            String style = o.optString("shelf_style", "hero").trim();
+            shelfStyleName = style.equals("rail3") || style.equals("row5") ? style : "hero";
+            heroBlurRadius = Math.max(0, Math.min(25, o.optInt("hero_blur", HERO_BLUR_DEFAULT)));
+        } catch (Exception e) {
+            shelfStyleName = "hero";
+            heroBlurRadius = HERO_BLUR_DEFAULT;
+        }
     }
 
     /** Shows these cards (null or empty: no shelf) and moves the name to match. hero: the single big card. */
@@ -2151,22 +2177,115 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     private void bindShelf(List<ShelfContent.Item> items, boolean hero) {
         shelfRow.removeAllViews();
-        if (hero) {
+        refreshShelfStyle();
+        if (hero) {   // the container height follows the style even when only the style changed
+            shelf.getLayoutParams().height = (int) (shelfHeightDp() * density);
+            shelf.requestLayout();
+        }
+        if (hero && !"rail3".equals(shelfStyleName) && !"row5".equals(shelfStyleName)) {
             heroItems = items;
             shelfRow.addView(heroCard());
             return;
         }
         heroItems = java.util.Collections.emptyList();
+        if (hero && "rail3".equals(shelfStyleName)) {   // the classic portrait 3-card rail
+            for (int i = 0; i < items.size() && i < 3; i++) shelfRow.addView(shelfCard(items.get(i), i, Math.min(3, items.size())));
+            return;
+        }
+        if (hero) {   // row5: Fire-TV style portrait posters in a scrollable row
+            for (int i = 0; i < items.size(); i++) shelfRow.addView(rowCard(items.get(i), i, items.size()));
+            return;
+        }
         for (int i = 0; i < items.size(); i++) shelfRow.addView(shelfCard(items.get(i), i, items.size()));
     }
 
+    /** row5: one portrait poster with its title underneath, the focused one zooming up like Fire TV's recents. */
+    private View rowCard(ShelfContent.Item item, int index, int count) {
+        int w = (int) (110 * density), h = (int) (165 * density);
+        LinearLayout column = new LinearLayout(this);
+        column.setOrientation(LinearLayout.VERTICAL);
+        column.setClipChildren(false);
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT);
+        clp.setMarginEnd((int) (20 * density));
+        column.setLayoutParams(clp);
+        FrameLayout card = new FrameLayout(this);
+        LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(w, h);
+        cardLp.topMargin = (int) (20 * density);   // room for the focus zoom
+        card.setLayoutParams(cardLp);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(0xFF22252B);
+        bg.setCornerRadius(10 * density);
+        card.setBackground(bg);
+        card.setClipToOutline(true);
+        card.setFocusable(true);
+        TextView stand = new TextView(this);
+        stand.setText(item.title);
+        stand.setTextColor(0xB3FFFFFF);
+        stand.setTextSize(13);
+        stand.setGravity(Gravity.CENTER);
+        stand.setPadding((int) (8 * density), 0, (int) (8 * density), 0);
+        stand.setMaxLines(3);
+        stand.setEllipsize(TextUtils.TruncateAt.END);
+        card.addView(stand, new FrameLayout.LayoutParams(w, h));
+        ImageView pic = new ImageView(this);
+        pic.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        card.addView(pic, new FrameLayout.LayoutParams(w, h));
+        shelfImages.load(item.image, pic);
+        if (item.progress > 0) {
+            View bar = new View(this);
+            bar.setBackgroundColor(0xFFFFFFFF);
+            card.addView(bar, new FrameLayout.LayoutParams(w * item.progress / 100, (int) (3 * density), Gravity.BOTTOM));
+        }
+        TextView title = new TextView(this);
+        title.setText(item.title);
+        title.setTextColor(0xFFFFFFFF);
+        title.setTextSize(12);
+        title.setMaxLines(1);
+        title.setEllipsize(TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(w, ViewGroup.LayoutParams.WRAP_CONTENT);
+        tlp.topMargin = (int) (8 * density);
+        column.addView(card);
+        column.addView(title, tlp);
+        GradientDrawable ring = new GradientDrawable();
+        ring.setCornerRadius(10 * density);
+        ring.setStroke((int) (3 * density), 0xFFFFFFFF);
+        ring.setColor(0x00000000);
+        card.setOnFocusChangeListener((v, focused) -> {
+            float scale = focused && animations ? 1.16f : 1f;
+            card.animate().scaleX(scale).scaleY(scale).setDuration(animations ? 140 : 0).start();
+            card.setForeground(focused ? ring : null);
+            if (focused) shelfFocusIndex = index;
+        });
+        card.setOnClickListener(v -> openShelfItem(item));
+        card.setOnKeyListener((v, keyCode, event) -> {
+            if (event.getAction() != KeyEvent.ACTION_DOWN) return false;
+            switch (keyCode) {
+                case KeyEvent.KEYCODE_DPAD_DOWN:
+                    focusTile(lastFocused);
+                    return true;
+                case KeyEvent.KEYCODE_DPAD_UP:
+                    View pill = btnInputs.getVisibility() == View.VISIBLE ? btnInputs : findViewById(R.id.btnWifi);
+                    pill.requestFocus();
+                    return true;
+                case KeyEvent.KEYCODE_DPAD_LEFT:
+                    return index == 0;
+                case KeyEvent.KEYCODE_DPAD_RIGHT:
+                    return index == count - 1;
+                default:
+                    return false;
+            }
+        });
+        return column;
+    }
+
     /** The focused hero card's views, rebound in place when left/right cycles to another item. */
-    private ImageView heroPic;
+    private ImageView heroPic, heroPoster;
     private TextView heroStand, heroTitle, heroLine;
     private View heroBar;
     private LinearLayout heroDots;
 
-    /** Apple-style Continue Watching: one 16:9 card, the title/episode/progress inside its lower veil, dots below. */
+    /** Apple-style Continue Watching: one wide banner — the show's art blurred behind, its portrait poster
+     *  standing centred on the right, the title/episode/progress on the left, position dots below. */
     private View heroCard() {
         int w = (int) (HERO_CARD_W_DP * density), h = (int) (HERO_CARD_H_DP * density);
         LinearLayout column = new LinearLayout(this);
@@ -2194,50 +2313,75 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         heroStand.setEllipsize(TextUtils.TruncateAt.END);
         card.addView(heroStand, new FrameLayout.LayoutParams(w, h));
 
-        heroPic = new ImageView(this);
+        heroPic = new ImageView(this);   // the blurred backdrop: the same art, softened so it sets the mood
         heroPic.setScaleType(ImageView.ScaleType.CENTER_CROP);
         card.addView(heroPic, new FrameLayout.LayoutParams(w, h));
 
         View veil = new View(this);
-        GradientDrawable veilBg = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-                new int[]{0x00000000, 0x80095115, 0xE60A0C12});
+        GradientDrawable veilBg = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+                new int[]{0xB80A0C12, 0x400A0C12, 0x660A0C12});   // darker left for the text, the art stays visible
         veil.setBackground(veilBg);
-        card.addView(veil, new FrameLayout.LayoutParams(w, (int) (104 * density), Gravity.BOTTOM));
+        card.addView(veil, new FrameLayout.LayoutParams(w, h));
 
         LinearLayout meta = new LinearLayout(this);
         meta.setOrientation(LinearLayout.VERTICAL);
-        FrameLayout.LayoutParams mlp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM | Gravity.START);
-        mlp.leftMargin = (int) (18 * density);
-        mlp.bottomMargin = (int) (14 * density);
+        meta.setGravity(Gravity.CENTER_VERTICAL);
+        FrameLayout.LayoutParams mlp = new FrameLayout.LayoutParams((int) (320 * density), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.START);
+        mlp.leftMargin = (int) (26 * density);
         meta.setLayoutParams(mlp);
+        TextView cap = new TextView(this);
+        cap.setText("继续观看");
+        cap.setTextColor(0x99AAB6CC);
+        cap.setTextSize(12);
+        cap.setLetterSpacing(0.15f);
+        meta.addView(cap);
         heroTitle = new TextView(this);
         heroTitle.setTextColor(0xFFFFFFFF);
-        heroTitle.setTextSize(20);
+        heroTitle.setTextSize(24);
         heroTitle.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
         heroTitle.setMaxLines(1);
         heroTitle.setEllipsize(TextUtils.TruncateAt.END);
-        meta.addView(heroTitle);
+        LinearLayout.LayoutParams tlp0 = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        tlp0.topMargin = (int) (7 * density);
+        meta.addView(heroTitle, tlp0);
         heroLine = new TextView(this);
         heroLine.setTextColor(0xFFCFD6E4);
         heroLine.setTextSize(13);
-        heroLine.setMaxLines(1);
+        heroLine.setMaxLines(2);
+        heroLine.setEllipsize(TextUtils.TruncateAt.END);
+        heroLine.setLineSpacing(2 * density, 1f);
         LinearLayout.LayoutParams llp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        llp.topMargin = (int) (5 * density);
+        llp.topMargin = (int) (7 * density);
         meta.addView(heroLine, llp);
         LinearLayout track = new LinearLayout(this);
         track.setOrientation(LinearLayout.HORIZONTAL);
         View trackBg = new View(this);
         trackBg.setBackgroundColor(0x47FFFFFF);
-        LinearLayout.LayoutParams tblp = new LinearLayout.LayoutParams((int) (220 * density), (int) (4 * density));
-        track.addView(trackBg, tblp);
+        track.addView(trackBg, new LinearLayout.LayoutParams((int) (240 * density), (int) (4 * density)));
         heroBar = new View(track.getContext());
         heroBar.setBackgroundColor(0xFFFFFFFF);
-        LinearLayout.LayoutParams brlp = new LinearLayout.LayoutParams(0, (int) (4 * density));
-        track.addView(heroBar, brlp);
+        track.addView(heroBar, new LinearLayout.LayoutParams(0, (int) (4 * density)));
         LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        tlp.topMargin = (int) (9 * density);
+        tlp.topMargin = (int) (12 * density);
         meta.addView(track, tlp);
         card.addView(meta);
+
+        FrameLayout stand = new FrameLayout(this);   // the portrait poster, fully visible and vertically centred
+        int pw = (int) (HERO_POSTER_W_DP * density), ph = (int) (HERO_POSTER_H_DP * density);
+        FrameLayout.LayoutParams slp = new FrameLayout.LayoutParams(pw, ph, Gravity.END | Gravity.CENTER_VERTICAL);
+        slp.rightMargin = (int) (26 * density);
+        stand.setLayoutParams(slp);
+        GradientDrawable standBg = new GradientDrawable();
+        standBg.setColor(0xFF22252B);
+        standBg.setCornerRadius(10 * density);
+        standBg.setStroke((int) (1 * density), 0x22FFFFFF);
+        stand.setBackground(standBg);
+        stand.setClipToOutline(true);
+        stand.setElevation(10 * density);
+        heroPoster = new ImageView(this);
+        heroPoster.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        stand.addView(heroPoster, new FrameLayout.LayoutParams(pw, ph));
+        card.addView(stand);
         column.addView(card);
 
         heroDots = new LinearLayout(this);
@@ -2253,7 +2397,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         ring.setStroke((int) (3 * density), 0xFFFFFFFF);
         ring.setColor(0x00000000);
         card.setOnFocusChangeListener((v, focused) -> {
-            float scale = focused && animations ? 1.04f : 1f;
+            float scale = focused && animations ? 1.03f : 1f;
             card.animate().scaleX(scale).scaleY(scale).setDuration(animations ? 140 : 0).start();
             card.setForeground(focused ? ring : null);
         });
@@ -2280,14 +2424,47 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                     return false;
             }
         });
-        heroIndex = Math.max(0, Math.min(heroIndex, items0Safe()));
+        if (!heroItems.isEmpty()) heroIndex = Math.max(0, Math.min(heroIndex, heroItems.size() - 1));
         bindHero();
         return column;
     }
 
-    private int items0Safe() {
-        return heroItems.size() - 1;
+    /** Puts the current item's art, title, episode/progress and dots into the hero card. */
+    private void bindHero() {
+        if (heroItems.isEmpty() || heroPic == null) return;
+        ShelfContent.Item item = heroItems.get(heroIndex);
+        String name = item.title, ep = null;
+        int dot = item.title.indexOf('·');
+        if (dot > 0) {
+            name = item.title.substring(0, dot);
+            ep = item.title.substring(dot + 1);
+        }
+        heroStand.setText(name);
+        heroTitle.setText(name);
+        heroLine.setText(item.progress > 0 ? (ep != null ? ep + " · 已看 " + item.progress + "%" : "已看 " + item.progress + "%") : (ep != null ? ep : ""));
+        heroPic.setImageDrawable(null);
+        heroImages.load(item.image, heroPic, heroBlurRadius);
+        heroPoster.setImageDrawable(null);
+        heroImages.load(item.image, heroPoster);
+        heroPoster.animate().alpha(0f).setDuration(0).start();
+        heroPoster.animate().alpha(1f).setDuration(animations ? 160 : 0).start();
+        LinearLayout.LayoutParams brlp = (LinearLayout.LayoutParams) heroBar.getLayoutParams();
+        brlp.width = (int) (240 * density * Math.max(0, Math.min(100, item.progress)) / 100f);
+        heroBar.setLayoutParams(brlp);
+        heroDots.removeAllViews();
+        for (int i = 0; i < heroItems.size(); i++) {
+            View d = new View(this);
+            GradientDrawable dd = new GradientDrawable();
+            dd.setShape(GradientDrawable.OVAL);
+            dd.setColor(i == heroIndex ? 0xFFFFFFFF : 0x47FFFFFF);
+            LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams((int) (7 * density), (int) (7 * density));
+            if (i > 0) plp.leftMargin = (int) (7 * density);
+            d.setBackground(dd);
+            heroDots.addView(d, plp);
+        }
     }
+
+
 
     /** Puts the current item's art, title, episode/progress and dots into the hero card. */
     private void bindHero() {
