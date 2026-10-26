@@ -197,7 +197,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     /** Items behind the hero card; left/right on the remote cycles through them. */
     private List<ShelfContent.Item> heroItems = java.util.Collections.emptyList();
     private int heroIndex;
-    private String lastHeroBind;
     /** Top of the focused dock tile in root coordinates, from the last showHero. */
     private float shelfDockTop;
     private int shelfFocusIndex;
@@ -2460,9 +2459,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private void bindHero() {
         if (heroItems.isEmpty() || heroPic == null) return;
         ShelfContent.Item item = heroItems.get(heroIndex);
-        String rebindKey = heroIndex + "|" + item.image + "|" + item.progress;
-        if (rebindKey.equals(lastHeroBind)) return;   // same card re-bound on app-row focus moves: skip, no flicker
-        lastHeroBind = rebindKey;
         String name = item.title, ep = null;
         int dot = item.title.indexOf('·');
         if (dot > 0) {
