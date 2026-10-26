@@ -50,6 +50,10 @@
     <string name="native_settings">Native settings</string>
     <string name="columns_label">Apps per row</string>
     <string name="rows_below_dock_label">Rows below dock</string>
+    <string name="shelf_style_label">Continue watching style</string>
+    <string name="shelf_style_hero">Hero card</string>
+    <string name="shelf_style_rail3">3 cards</string>
+    <string name="shelf_style_row5">Poster row</string>
     <string name="dock_opacity_label">Dock band opacity</string>
     <string name="wallpaper_label">Wallpaper</string>
     <string name="wallpaper_state">Wallpaper: %1$s</string>

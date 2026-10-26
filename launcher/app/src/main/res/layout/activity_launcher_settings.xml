@@ -72,6 +72,25 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="18dp"
+            android:text="@string/shelf_style_label"
+            android:textColor="#FFFFFFFF"
+            android:textSize="20sp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:orientation="horizontal">
+
+            <TextView android:id="@+id/shelfHero" style="@style/SettingsColumnChoice" android:text="@string/shelf_style_hero" />
+            <TextView android:id="@+id/shelfRail3" style="@style/SettingsColumnChoice" android:text="@string/shelf_style_rail3" />
+            <TextView android:id="@+id/shelfRow5" style="@style/SettingsColumnChoice" android:text="@string/shelf_style_row5" />
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
             android:text="@string/dock_opacity_label"
             android:textColor="#FFFFFFFF"
             android:textSize="20sp" />

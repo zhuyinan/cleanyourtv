@@ -2115,6 +2115,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     /** Reads shelf_style / hero_blur from config.json (mtime-cached; the file is tiny and read only at bind time). */
     private void refreshShelfStyle() {
+        String pref = getSharedPreferences(Config.SETTINGS_NAME, MODE_PRIVATE).getString("shelf_style", null);
+        if (pref != null) {   // the settings page choice beats config.json
+            shelfStyleName = pref.equals("rail3") || pref.equals("row5") ? pref : "hero";
+            return;
+        }
         try {
             java.io.File f = new java.io.File(getExternalFilesDir(null), "config.json");
             if (f == null || f.lastModified() == shelfStyleStamp && shelfStyleFile != null) return;

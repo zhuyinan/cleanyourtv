@@ -28,6 +28,8 @@ public final class LauncherSettingsActivity extends Activity {
     private static final int[] DOCK_OPACITIES = {100, 70, 50, 30};
     private final TextView[] dockChoices = new TextView[DOCK_OPACITIES.length];
     private TextView wallpaperChoice;
+    private final TextView[] shelfChoices = new TextView[3];
+    private String shelfStyle;
     private TextView animationsChoice;
     private TextView advancedChoice;
     private TextView followThemeChoice;
@@ -52,6 +54,7 @@ public final class LauncherSettingsActivity extends Activity {
         });
         columns = config.columns;
         rowsBelowDock = config.rowsBelowDock;
+        shelfStyle = shelfStyleNow();
         dockOpacity = config.dockOpacity;
         animations = config.animations;
         advancedEffects = config.animations && config.advancedEffects;
@@ -98,6 +101,19 @@ public final class LauncherSettingsActivity extends Activity {
             reverseRow(columnChoices);
             reverseRow(rowChoices);
             reverseRow(dockChoices);
+        }
+        String[] styles = {"hero", "rail3", "row5"};
+        int[] shelfIds = {R.id.shelfHero, R.id.shelfRail3, R.id.shelfRow5};
+        for (int i = 0; i < shelfIds.length; i++) {
+            final String value = styles[i];
+            shelfChoices[i] = findViewById(shelfIds[i]);
+            shelfChoices[i].setOnClickListener(v -> {
+                if (value.equals(shelfStyle)) return;
+                shelfStyle = value;
+                choices.edit().putString("shelf_style", value).apply();
+                changed();
+                refresh();
+            });
         }
         wallpaperChoice = findViewById(R.id.wallpaperChoice);
         wallpaperChoice.setOnClickListener(v -> showWallpaperPicker());
@@ -269,6 +285,23 @@ public final class LauncherSettingsActivity extends Activity {
         refresh();
     }
 
+    /** The shelf style the launcher shows now: the settings choice wins, then config.json, then hero. */
+    private String shelfStyleNow() {
+        String pref = choices.getString("shelf_style", null);
+        if (pref != null) return pref;
+        try {
+            File dir = Config.dir(this);
+            File f = dir == null ? null : new File(dir, Config.FILE_NAME);
+            if (f != null && f.isFile()) {
+                org.json.JSONObject o = new org.json.JSONObject(new String(java.nio.file.Files.readAllBytes(f.toPath()), "UTF-8"));
+                String v = o.optString("shelf_style", "hero").trim();
+                return v.equals("rail3") || v.equals("row5") ? v : "hero";
+            }
+        } catch (Exception ignored) {
+        }
+        return "hero";
+    }
+
     private void refresh() {
         for (int i = 0; i < columnChoices.length; i++) {
             columnChoices[i].setSelected(columns == i + 4);
@@ -278,6 +311,10 @@ public final class LauncherSettingsActivity extends Activity {
         }
         for (int i = 0; i < dockChoices.length; i++) {
             dockChoices[i].setSelected(dockOpacity == DOCK_OPACITIES[i]);
+        }
+        String[] styles = {"hero", "rail3", "row5"};
+        for (int i = 0; i < shelfChoices.length; i++) {
+            shelfChoices[i].setSelected(styles[i].equals(shelfStyle));
         }
         animationsChoice.setText(getString(R.string.animations_state,
                 getString(animations ? R.string.on : R.string.off)));
