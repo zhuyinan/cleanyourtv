@@ -148,12 +148,4 @@
     <string name="tile_add_to_dock">添加到程序坞</string>
     <string name="tile_move">移动</string>
     <string name="tile_replace_in_dock">替换为其他应用</string>
-
-    <string name="scene_curtain_title">窗帘</string>
-    <string name="scene_curtain_subtitle">关闭客厅梦幻帘</string>
-    <string name="scene_movie_title">观影</string>
-    <string name="scene_movie_subtitle">关灯 · 开电视墙灯带</string>
-    <string name="scene_curtain_toast">窗帘关闭中…</string>
-    <string name="scene_movie_toast">观影模式开启</string>
-    <string name="scene_failed_toast">场景触发失败</string>
 </resources>

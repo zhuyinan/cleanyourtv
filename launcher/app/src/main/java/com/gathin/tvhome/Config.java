@@ -244,17 +244,10 @@ final class Config {
     final int clockWallpaperDim;
     /** The clock screensaver's coloured glow; false leaves the clock on plain black, e.g. for an OLED (config.xml, clock_glow). */
     final boolean clockGlow;
-    /** Every app in the dock's row, which scrolls sideways, and no grid below it (config.xml single_row); needs dock_row. */
+    /** Every app in the dock's row, which scrolls sideways, and no grid below it (config.xml, single_row); needs dock_row. */
     final boolean singleRow;
-    /** With single_row, the band runs behind every app in the row, not only the dock apps (config.xml dock_band_all). */
+    /** With single_row, the band runs behind every app in the row, not only the dock apps (config.xml, dock_band_all). */
     final boolean dockBandAll;
-    /** Scene card "Curtain" webhook (config.json scene_curtain_webhook); empty hides the card. */
-    final String sceneCurtainWebhook;
-    /** Scene card "Movie night" webhook (config.json scene_movie_webhook); empty hides the card. */
-    final String sceneMovieWebhook;
-    /** Down from the header, the hero card, the scene cards or the dock opens the fullscreen blurred drawer
-     *  (config.json fullscreen_drawer); false keeps the stock rows-below-the-dock behaviour. */
-    final boolean fullscreenDrawer;
 
     private Config(List<String> dockApps, boolean fillDock, List<String> hiddenApps, List<String> libraryApps, String liveTvPackage,
                    String liveTvAction, String liveTvInputId, Map<String, String> launchActions, Map<String, String> appLabels,
@@ -269,8 +262,7 @@ final class Config {
                    List<RaceWeekend.Race> raceCalendar, boolean cinematicHome, boolean ambientGlow, boolean appGlow, boolean fadeRows, int homeIdleClockMinutes,
                    boolean keyFilter, boolean dockGlass, String glowStyle, boolean wallpaperCaptions,
                    boolean handleViewInputs, boolean tileMenu, boolean dockEvenPadding, boolean dockBand, boolean cinematicDots, boolean cinematicWhiteFocus, boolean wifiStatusColor, int cinematicScrim, int cinematicArt,
-                   Map<String, Set<String>> wallpaperMoods, boolean gamepadPassthrough, boolean consumeVolumeKeys, boolean powerOnHome, boolean wifiStatusWarnings, List<String> topBarApps, boolean showGreeting, boolean headerWhite, boolean clockWallpaper, int clockWallpaperDim, boolean clockGlow, String glassStyle, boolean singleRow, boolean dockBandAll, boolean lunarDate, int lunarUtcOffset, boolean dateBelowClock,
-                   String sceneCurtainWebhook, String sceneMovieWebhook, boolean fullscreenDrawer) {
+                   Map<String, Set<String>> wallpaperMoods, boolean gamepadPassthrough, boolean consumeVolumeKeys, boolean powerOnHome, boolean wifiStatusWarnings, List<String> topBarApps, boolean showGreeting, boolean headerWhite, boolean clockWallpaper, int clockWallpaperDim, boolean clockGlow, String glassStyle, boolean singleRow, boolean dockBandAll, boolean lunarDate, int lunarUtcOffset, boolean dateBelowClock) {
         this.handleViewInputs = handleViewInputs;
         this.tileMenu = tileMenu;
         this.inputKeycodes = inputKeycodes;
@@ -370,9 +362,6 @@ final class Config {
         this.clockGlow = clockGlow;
         this.singleRow = singleRow;
         this.dockBandAll = dockBandAll;
-        this.sceneCurtainWebhook = sceneCurtainWebhook;
-        this.sceneMovieWebhook = sceneMovieWebhook;
-        this.fullscreenDrawer = fullscreenDrawer;
         this.glowStyle = glowStyle(glowStyle);
         this.wallpaperCaptions = wallpaperCaptions;
         this.glassStyle = glassStyle(glassStyle);
@@ -490,8 +479,6 @@ final class Config {
         String glassStyle = res.getString(R.string.glass_style);
         boolean singleRow = res.getBoolean(R.bool.single_row);
         boolean dockBandAll = res.getBoolean(R.bool.dock_band_all);
-        String sceneCurtain = "", sceneMovie = "";
-        boolean fullscreenDrawer = false;
         boolean applied = false;
 
         File dir = dir(ctx);
@@ -591,9 +578,6 @@ final class Config {
             clockGlow = bool(json, "clock_glow", clockGlow);
             singleRow = bool(json, "single_row", singleRow);
             dockBandAll = bool(json, "dock_band_all", dockBandAll);
-            sceneCurtain = string(json, "scene_curtain_webhook", sceneCurtain);
-            sceneMovie = string(json, "scene_movie_webhook", sceneMovie);
-            fullscreenDrawer = bool(json, "fullscreen_drawer", fullscreenDrawer);
             glowStyle = string(json, "glow_style", glowStyle);
             glassStyle = string(json, "glass_style", glassStyle);
         }
@@ -656,7 +640,7 @@ final class Config {
                 dockBand, cinematicDots, cinematicWhiteFocus, wifiStatusColor, cinematicScrim, cinematicArt, wallpaperMoods, gamepadPassthrough,
                 consumeVolumeKeys, powerOnHome, wifiStatusWarnings, topBarApps, showGreeting, headerWhite, clockWallpaper,
                 Math.max(0, Math.min(90, clockWallpaperDim)), clockGlow, glassStyle, singleRow && dockRow, dockBandAll, lunar, lunarOffset,
-                dateBelowClock, sceneCurtain, sceneMovie, fullscreenDrawer);
+                dateBelowClock);
     }
 
     /**

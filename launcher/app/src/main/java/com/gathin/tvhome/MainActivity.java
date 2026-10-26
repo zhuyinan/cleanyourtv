@@ -198,30 +198,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private int heroIndex;
     /** Top of the focused dock tile in root coordinates, from the last showHero. */
     private float shelfDockTop;
-    // ---- two-column desktop: scene cards (config.json scene_*_webhook) and the fullscreen drawer (fullscreen_drawer) ----
-    /** The right column of scene cards; GONE unless a scene webhook is configured. */
-    private LinearLayout scenePanel;
-    private View sceneCardCurtain, sceneCardMovie;
-    /** config.json fullscreen_drawer: Down from the header, the hero card, the scene cards or the dock opens
-     *  a dark blurred overlay with the whole grid in it; false keeps the stock rows-below-the-dock behaviour. */
-    private boolean fullscreenDrawer;
-    /** The overlay while the drawer is open: dark backdrop, blurred desktop snapshot, and the grid itself. */
-    private FrameLayout drawerOverlay;
-    private ImageView drawerBlur;
-    /** The grid's parent and LayoutParams from before the drawer borrowed it, restored on close. */
-    private ViewGroup gridParent;
-    private ViewGroup.LayoutParams gridParams;
-    private boolean drawerOpen;
-    /** Scene webhooks and the drawer's blur run here; created only when one of the features is configured. */
-    private ExecutorService bgExecutor;
-    /** The main vertical column (header + grid wrapper), dimmed while the drawer is open. */
-    private View mainColumn;
-    /** The header block (greeting, clock, date, top buttons); the hero card docks just under it (A). */
-    private View header;
-    /** The loaded Config, for the grid-top computation outside onCreate (fitGridTop). */
-    private Config config;
-    /** rows_below_dock as loaded (fitGridTop runs outside onCreate). */
-    private int rowsBelowDockRows;
     private int shelfFocusIndex;
     private final Map<String, List<ShelfContent.Item>> shelfCache = new HashMap<>();
     /** Packages whose cached shelf is still current; cleared when Home comes back, so the next focus reloads. */
@@ -437,7 +413,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         density = getResources().getDisplayMetrics().density;
         // config.xml, overlaid by config.json from a pushed theme (see Config and tools/theme.sh).
         Config cfg = Config.load(this);
-        config = cfg;
         appLibrarySelection = cfg.appLibrarySelection;
         libraryOkOpens = cfg.libraryOkOpens;
         // restore_key_services: after a force stop, put back the remote's accessibility helpers that Android took
@@ -473,8 +448,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
         root = findViewById(R.id.root);
         root.setBackgroundColor(cfg.backgroundColor);
-        mainColumn = findViewById(R.id.mainColumn);
-        header = findViewById(R.id.header);
         // root fills the window with an opaque colour (Config keeps background_color opaque), so the window's own
         // black under it is a second full-screen fill on every frame for nothing. The starting window still uses
         // the theme's background, so launch looks the same.
@@ -659,8 +632,51 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
         // tvOS layout: push the dock row towards the bottom of the screen, leaving room for
         // rows_below_dock grid rows under it; the rest of the grid stays below until you press Down.
-        rowsBelowDockRows = cfg.rowsBelowDock;
-        grid.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> fitGridTop(r - l, b - t));
+        int rowsBelowDock = cfg.rowsBelowDock;
+        grid.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
+            int h = b - t;
+            // Item height follows the tile size, which follows the columns and the rows that must fit (AppAdapter.tileWidthPx).
+            int inner = (r - l) - grid.getPaddingLeft() - grid.getPaddingRight();
+            int tileW = AppAdapter.tileWidthPx(inner, h, COLUMNS, rowsBelowDock, cfg.dockTitle, cfg.dockRow, density);
+            int itemH = AppAdapter.itemHeightPx(AppAdapter.tileHeightPx(tileW), density);
+            int dockRow = itemH + (int) (AppAdapter.DOCK_EXTRA_DP * density);   // item height plus DockDecoration offsets
+            int gridRows = itemH * rowsBelowDock;
+            // Keep the hero below the header when the library is enabled on a short screen,
+            // even when the theme requests an extra visible row below the dock.
+            int shelfClearance = cfg.appLibrary ? hero.getMeasuredHeight() + (int) (40 * density) : 0;
+            int want = Math.max(shelfClearance, h - dockRow - gridRows - (int) (AppAdapter.BOTTOM_ROOM_DP * density));
+            // Where the rows cannot fit even at the smallest tile (3 rows with the title on), the title keeps its
+            // room above the dock and the last rows run off the bottom instead of the title drawing over the clock.
+            if (MainActivity.this.dockRow && cfg.dockTitle && rowsBelowDock > 0) want = Math.max(want, (int) (AppAdapter.TITLE_ROOM_DP * density));
+            // No dock to push down: the grid starts at the top, with room for the first row's zoom and glass.
+            if (!MainActivity.this.dockRow) want = (int) (AppAdapter.TOP_ROOM_DP * density);
+            // A single row never shows the names under its tiles (the title above the row names the app), so the
+            // 7dp gap and 22dp label item_app.xml keeps for them would only lift the row: sit it that much lower.
+            if (singleRow && !cfg.alwaysShowNames) want += (int) (29 * density);
+            if (grid.getPaddingTop() != want) {
+                grid.setPadding(grid.getPaddingLeft(), want, grid.getPaddingRight(), grid.getPaddingBottom());
+                // A vertical grid parks the dock on the new padding line by scrolling (onTileFocused); a sideways
+                // row cannot scroll vertically, and the layout request made from inside this layout pass is
+                // dropped, so lay the row out again on the next frame. The glass and the title were placed for the
+                // old position, so fit them again once it has moved.
+                if (singleRow) grid.post(() -> {
+                    grid.getViewTreeObserver().addOnGlobalLayoutListener(new ViewTreeObserver.OnGlobalLayoutListener() {
+                        @Override
+                        public void onGlobalLayout() {
+                            grid.getViewTreeObserver().removeOnGlobalLayoutListener(this);
+                            int pos = Math.max(0, Math.min(lastFocused, adapter.appCount() - 1));
+                            RecyclerView.ViewHolder vh = grid.findViewHolderForAdapterPosition(pos);
+                            View card = vh == null ? null : vh.itemView.findViewById(R.id.card);
+                            if (card != null && card.isFocused()) onTileFocused(pos, card);
+                        }
+                    });
+                    grid.requestLayout();
+                });
+            }
+            // Cold start or column count > 4: the first focus can run before the grid has its final width or
+            // padding, leaving the glass at the XML design size until a key is pressed.
+            grid.post(this::refitGlass);
+        });
 
         // Keep the glass glued to its tile while the grid scrolls.
         grid.addOnScrollListener(new RecyclerView.OnScrollListener() {
@@ -792,11 +808,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             if (event.getAction() != KeyEvent.ACTION_DOWN) return false;
             if (keyCode == KeyEvent.KEYCODE_DPAD_UP) return true;
             if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
-                // fullscreen_drawer: Down from the header opens the blurred drawer with every app in it.
-                if (fullscreenDrawer && !drawerOpen) {
-                    openDrawer();
-                    return true;
-                }
                 // Back to the shelf or the dock tile Up came from, not wherever the focus finder lands.
                 if (shelfOn) focusShelf();
                 else focusTile(singleRow ? lastFocused : lastFocused % COLUMNS);
@@ -824,29 +835,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             }
         }
         if (festive) applyFestiveSkin((TextView) btnInputs, (TextView) btnSettings);
-
-        // Two-column desktop (config.json): the scene card column (F) and the fullscreen drawer (D), both off
-        // unless config.json turns them on — the default home is exactly the stock one.
-        fullscreenDrawer = cfg.fullscreenDrawer;
-        scenePanel = findViewById(R.id.scenePanel);
-        sceneCardCurtain = findViewById(R.id.sceneCardCurtain);
-        sceneCardMovie = findViewById(R.id.sceneCardMovie);
-        boolean curtainSet = !cfg.sceneCurtainWebhook.isEmpty();
-        boolean movieSet = !cfg.sceneMovieWebhook.isEmpty();
-        if (curtainSet || movieSet) {
-            bgExecutor = Executors.newSingleThreadExecutor();
-            sceneCardCurtain.setVisibility(curtainSet ? View.VISIBLE : View.GONE);
-            sceneCardMovie.setVisibility(movieSet ? View.VISIBLE : View.GONE);
-            scenePanel.setVisibility(View.VISIBLE);
-            // Under the top buttons' bottom line, wherever the header ends up (clock size, stats line).
-            View topBar = findViewById(R.id.topButtons);
-            topBar.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> alignScenePanel());
-            scenePanel.post(this::alignScenePanel);
-            sceneCardCurtain.setOnClickListener(v -> triggerScene(cfg.sceneCurtainWebhook, R.string.scene_curtain_toast));
-            sceneCardMovie.setOnClickListener(v -> triggerScene(cfg.sceneMovieWebhook, R.string.scene_movie_toast));
-            sceneCardCurtain.setOnKeyListener((v, keyCode, event) -> sceneCardKey(keyCode, event, true));
-            sceneCardMovie.setOnKeyListener((v, keyCode, event) -> sceneCardKey(keyCode, event, false));
-        }
 
         // Hide the glass when focus leaves the tiles.
         getWindow().getDecorView().getViewTreeObserver().addOnGlobalFocusChangeListener((oldF, newF) -> {
@@ -1296,11 +1284,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
         if (handleSettingsKey(event)) return true;
-        // The drawer is open: Back (or Up from its first row, handled on the tiles) is the way out.
-        if (drawerOpen && (event.getKeyCode() == KeyEvent.KEYCODE_BACK || event.getKeyCode() == KeyEvent.KEYCODE_ESCAPE)) {
-            if (event.getAction() == KeyEvent.ACTION_UP && !event.isCanceled()) closeDrawer();
-            return true;
-        }
         if (tileMenuEnabled && !reordering && openPopup == null && cardPrompt == null
                 && event.getKeyCode() == KeyEvent.KEYCODE_MENU) {
             int position = focusedTilePosition();
@@ -1754,262 +1737,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
     }
 
-    /**
-     * Parks the dock by the grid's top padding: the stock tvOS computation (the dock plus rows_below_dock
-     * pushed towards the bottom), plus two config-gated extras — the room under the header-docked hero card
-     * stays background (A), and while the fullscreen drawer is open the grid stands alone with extra top
-     * padding for a vertically centred look (D). Extracted from the grid's layout listener, which only fires
-     * on size changes; the shelf and the drawer re-run it as they appear and disappear.
-     */
-    private void fitGridTop(int w, int h) {
-        // Item height follows the tile size, which follows the columns and the rows that must fit (AppAdapter.tileWidthPx).
-        int inner = w - grid.getPaddingLeft() - grid.getPaddingRight();
-        int tileW = AppAdapter.tileWidthPx(inner, h, COLUMNS, rowsBelowDockRows, config.dockTitle, config.dockRow, density);
-        int itemH = AppAdapter.itemHeightPx(AppAdapter.tileHeightPx(tileW), density);
-        int dockRowH = itemH + (int) (AppAdapter.DOCK_EXTRA_DP * density);   // item height plus DockDecoration offsets
-        int gridRows = itemH * rowsBelowDockRows;
-        // Keep the hero below the header when the library is enabled on a short screen,
-        // even when the theme requests an extra visible row below the dock.
-        int shelfClearance = config.appLibrary ? hero.getMeasuredHeight() + (int) (40 * density) : 0;
-        int want = Math.max(shelfClearance, h - dockRowH - gridRows - (int) (AppAdapter.BOTTOM_ROOM_DP * density));
-        // Where the rows cannot fit even at the smallest tile (3 rows with the title on), the title keeps its
-        // room above the dock and the last rows run off the bottom instead of the title drawing over the clock.
-        if (dockRow && config.dockTitle && rowsBelowDockRows > 0) want = Math.max(want, (int) (AppAdapter.TITLE_ROOM_DP * density));
-        // No dock to push down: the grid starts at the top, with room for the first row's zoom and glass.
-        if (!dockRow) want = (int) (AppAdapter.TOP_ROOM_DP * density);
-        // A single row never shows the names under its tiles (the title above the row names the app), so the
-        // 7dp gap and 22dp label item_app.xml keeps for them would only lift the row: sit it that much lower.
-        if (singleRow && !config.alwaysShowNames) want += (int) (29 * density);
-        // A: the hero card is docked under the header, so the room under it stays background — the grid's rows
-        // are pushed past the card whenever they would otherwise scroll up over it.
-        if (!drawerOpen && shelfOn && heroCardStyle())
-            want = Math.max(want, (int) (heroCardTopY() + shelfHeightDp() * density));
-        // D: alone in the drawer overlay, the grid gets extra top padding for a vertically centred look.
-        if (drawerOpen) want += (int) (80 * density);
-        if (grid.getPaddingTop() != want) {
-            grid.setPadding(grid.getPaddingLeft(), want, grid.getPaddingRight(), grid.getPaddingBottom());
-            // A vertical grid parks the dock on the new padding line by scrolling (onTileFocused); a sideways
-            // row cannot scroll vertically, and the layout request made from inside this layout pass is
-            // dropped, so lay the row out again on the next frame. The glass and the title were placed for the
-            // old position, so fit them again once it has moved.
-            if (singleRow) grid.post(() -> {
-                grid.getViewTreeObserver().addOnGlobalLayoutListener(new ViewTreeObserver.OnGlobalLayoutListener() {
-                    @Override
-                    public void onGlobalLayout() {
-                        grid.getViewTreeObserver().removeOnGlobalLayoutListener(this);
-                        int pos = Math.max(0, Math.min(lastFocused, adapter.appCount() - 1));
-                        RecyclerView.ViewHolder vh = grid.findViewHolderForAdapterPosition(pos);
-                        View card = vh == null ? null : vh.itemView.findViewById(R.id.card);
-                        if (card != null && card.isFocused()) onTileFocused(pos, card);
-                    }
-                });
-                grid.requestLayout();
-            });
-        }
-        // Cold start or column count > 4: the first focus can run before the grid has its final width or
-        // padding, leaving the glass at the XML design size until a key is pressed.
-        grid.post(this::refitGlass);
-    }
-
-    /** True when the shelf holds the single big Continue Watching card (shelf_style hero, not rail3/row5). */
-    private boolean heroCardStyle() {
-        return shelfHero && !"rail3".equals(shelfStyleName) && !"row5".equals(shelfStyleName);
-    }
-
-    /** The hero card's fixed top (A): just under the header, whatever rows_below_dock does to the dock. */
-    private float heroCardTopY() {
-        int bottom = header.getBottom();   // the header's parent sits at the root's origin
-        return bottom > 0 ? bottom + 4 * density : 150 * density;
-    }
-
-    // ---- scene cards (config.json scene_curtain_webhook / scene_movie_webhook) ----------------------
-
-    /** Puts the scene column under the top buttons' bottom line; the header's height follows the clock and the stats line. */
-    private void alignScenePanel() {
-        if (scenePanel == null || scenePanel.getVisibility() != View.VISIBLE) return;
-        View bar = findViewById(R.id.topButtons);
-        int[] barLoc = new int[2], panelLoc = new int[2];
-        bar.getLocationInWindow(barLoc);
-        scenePanel.getLocationInWindow(panelLoc);
-        float target = barLoc[1] + bar.getHeight() + 10 * density;
-        scenePanel.setTranslationY(scenePanel.getTranslationY() + target - panelLoc[1]);
-    }
-
-    /** Focus flow in the scene column: Up from Curtain to the hero card, Down from Movie night into the drawer. */
-    private boolean sceneCardKey(int keyCode, KeyEvent event, boolean curtain) {
-        if (event.getAction() != KeyEvent.ACTION_DOWN) return false;
-        if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
-            if (!curtain) {
-                sceneCardCurtain.requestFocus();
-                return true;
-            }
-            if (shelfOn) {
-                focusShelf();   // back to the hero card
-                return true;
-            }
-            return false;       // no shelf: the top bar takes over, as on a tile
-        }
-        if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
-            if (curtain) {
-                if (sceneCardMovie.getVisibility() == View.VISIBLE) sceneCardMovie.requestFocus();
-                return true;
-            }
-            if (fullscreenDrawer) openDrawer();
-            return true;        // the column's bottom end
-        }
-        if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) return true;   // nothing to the right of the column
-        return false;
-    }
-
-    /** Focus the scene column's first visible card; false when the column is not on screen. */
-    private boolean focusSceneColumn() {
-        if (scenePanel == null || scenePanel.getVisibility() != View.VISIBLE) return false;
-        View first = sceneCardCurtain.getVisibility() == View.VISIBLE ? sceneCardCurtain : sceneCardMovie;
-        return first.getVisibility() == View.VISIBLE && first.requestFocus();
-    }
-
-    /** POSTs the scene's webhook (fire and forget, 3 s timeouts) and toasts the outcome; never blocks the UI thread. */
-    private void triggerScene(String url, int actionToast) {
-        if (bgExecutor == null) return;
-        bgExecutor.execute(() -> {
-            boolean ok = postWebhook(url);
-            handler.post(() -> Toast.makeText(this, ok ? actionToast : R.string.scene_failed_toast,
-                    Toast.LENGTH_SHORT).show());
-        });
-    }
-
-    /** One empty POST; an answer in the 2xx/3xx range counts as success, only a failed connection does not. */
-    private static boolean postWebhook(String url) {
-        try {
-            java.net.HttpURLConnection conn = (java.net.HttpURLConnection) new java.net.URL(url).openConnection();
-            conn.setRequestMethod("POST");
-            conn.setConnectTimeout(3000);
-            conn.setReadTimeout(3000);
-            int code = conn.getResponseCode();
-            conn.disconnect();
-            return code >= 200 && code < 400;
-        } catch (Exception e) {
-            return false;
-        }
-    }
-
-    // ---- fullscreen drawer (config.json fullscreen_drawer) -------------------------------------------
-
-    /**
-     * Down from the header, the hero card, the scene cards or the dock row: the desktop dims and shrinks a
-     * little over a darkened blur of itself, and the grid — reparented into the overlay, sized to the screen —
-     * takes focus with every app in it. Back (or Up from the first row) closes it and puts focus back on the dock.
-     */
-    private void openDrawer() {
-        if (!fullscreenDrawer || drawerOpen || reordering) return;
-        drawerOpen = true;
-        if (bgExecutor == null) bgExecutor = Executors.newSingleThreadExecutor();
-        final Bitmap snapshot = desktopSnapshot();
-        if (drawerOverlay == null) {
-            drawerOverlay = new FrameLayout(this);
-            drawerOverlay.setBackgroundColor(0xCC000000);
-            drawerBlur = new ImageView(this);
-            drawerBlur.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            drawerBlur.setAlpha(0.6f);
-            drawerOverlay.addView(drawerBlur, new FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        }
-        if (drawerOverlay.getParent() == null)
-            root.addView(drawerOverlay, new ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        else {
-            // Opened again while the closing fade was still running: keep the overlay and call the fade off.
-            drawerOverlay.animate().cancel();
-            drawerOverlay.setAlpha(1f);
-        }
-        if (snapshot != null) bgExecutor.execute(() -> {
-            Bitmap blurred = blur(snapshot);
-            snapshot.recycle();
-            handler.post(() -> {
-                if (blurred == null) return;
-                if (drawerOpen) drawerBlur.setImageBitmap(blurred);
-                else blurred.recycle();
-            });
-        });
-        // The grid moves into the overlay; its old parent and LayoutParams are restored on close.
-        gridParent = (ViewGroup) grid.getParent();
-        gridParams = grid.getLayoutParams();
-        gridParent.removeView(grid);
-        drawerOverlay.addView(grid, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        fitGridTop(grid.getWidth(), grid.getHeight());
-        // The desktop sinks back: dim and slightly shrink every layer the grid left behind.
-        dimDesktop(0.12f, 0.96f);
-        focusTile(lastFocused);
-    }
-
-    private void closeDrawer() {
-        if (!drawerOpen) return;
-        drawerOpen = false;
-        drawerOverlay.removeView(grid);
-        gridParent.addView(grid, gridParams);
-        gridParent = null;
-        gridParams = null;
-        fitGridTop(grid.getWidth(), grid.getHeight());
-        dimDesktop(1f, 1f);
-        drawerOverlay.animate().alpha(0f).setDuration(animations && !reducedMotion ? 200 : 0).withEndAction(() -> {
-            drawerOverlay.setAlpha(1f);
-            if (drawerOpen) return;   // opened again before the fade finished: the overlay stays
-            root.removeView(drawerOverlay);
-            drawerBlur.setImageDrawable(null);
-        }).start();
-        // Focus goes back to the dock, wherever the drawer's grid was left.
-        focusTile(singleRow ? lastFocused : lastFocused % COLUMNS);
-    }
-
-    /** The desktop layers' dim-and-shrink while the drawer is open (and their way back). */
-    private void dimDesktop(float alpha, float scale) {
-        View[] layers = {mainColumn, shelf, scenePanel};
-        for (View layer : layers) {
-            if (layer == null || layer.getVisibility() != View.VISIBLE) continue;
-            layer.animate().alpha(alpha).scaleX(scale).scaleY(scale)
-                    .setDuration(animations && !reducedMotion ? 200 : 0).start();
-        }
-    }
-
-    /** A copy of the desktop as it stands, for the drawer's blurred backdrop; null when it cannot be taken. */
-    private Bitmap desktopSnapshot() {
-        try {
-            root.setDrawingCacheQuality(View.DRAWING_CACHE_QUALITY_HIGH);
-            root.setDrawingCacheEnabled(true);
-            Bitmap cache = root.getDrawingCache();
-            Bitmap shot = cache == null || cache.getWidth() == 0 ? null : Bitmap.createBitmap(cache);
-            root.setDrawingCacheEnabled(false);
-            return shot;
-        } catch (Throwable t) {
-            root.setDrawingCacheEnabled(false);
-            return null;   // no backdrop, only the dark overlay — never a crash on the home screen
-        }
-    }
-
-    /** RenderScript Gaussian blur (the framework API, radius 20); null on any failure leaves the drawer plain dark. */
-    private Bitmap blur(Bitmap src) {
-        try {
-            Bitmap out = Bitmap.createBitmap(src.getWidth(), src.getHeight(), Bitmap.Config.ARGB_8888);
-            android.renderscript.RenderScript rs = android.renderscript.RenderScript.create(this);
-            try {
-                android.renderscript.Allocation input = android.renderscript.Allocation.createFromBitmap(rs, src);
-                android.renderscript.Allocation output = android.renderscript.Allocation.createFromBitmap(rs, out);
-                android.renderscript.ScriptIntrinsicBlur script = android.renderscript.ScriptIntrinsicBlur.create(rs,
-                        android.renderscript.Element.U8_4(rs));
-                script.setRadius(20f);
-                script.setInput(input);
-                script.forEach(output);
-                output.copyTo(out);
-            } finally {
-                rs.destroy();
-            }
-            return out;
-        } catch (Throwable t) {
-            return null;
-        }
-    }
-
     // ---- top shelf -------------------------------------------------------------------------------
 
     private void showHero(int position, float dockTopInRoot) {
@@ -2431,23 +2158,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
         shelfOn = show;
         positionShelf();
-        // The card's fixed spot changes how far the grid's rows may scroll up (fitGridTop), and the layout
-        // listener only fires on size changes — refit the padding here, where the card appears or leaves.
-        if (grid.getWidth() > 0) fitGridTop(grid.getWidth(), grid.getHeight());
     }
 
     private void positionShelf() {
         if (!topShelf) return;
-        if (shelfOn && heroCardStyle()) {
-            // A: the hero card is docked just under the header, whatever rows_below_dock does to the dock,
-            // so it never floats up over the clock. The shelf's padding starts at 64dp; 4dp more lines the
-            // card's left edge up with the hero name's 68dp margin.
-            shelf.setY(heroCardTopY());
-            shelf.setX(4 * density);
-        } else if (shelfOn) {
-            shelf.setY(shelfDockTop - 34 * density - shelfHeightDp() * density);
-            shelf.setX(0f);
-        }
+        if (shelfOn) shelf.setY(shelfDockTop - 34 * density - shelfHeightDp() * density);
         if (heroShown) {
             // Also while the name is between its fade out and in for a new app: the row can arrive just then.
             float y = heroY(shelfDockTop);
@@ -2688,11 +2403,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             if (event.getAction() != KeyEvent.ACTION_DOWN) return false;
             switch (keyCode) {
                 case KeyEvent.KEYCODE_DPAD_DOWN:
-                    // fullscreen_drawer: Down from the hero card opens the blurred drawer with every app in it.
-                    if (fullscreenDrawer && !drawerOpen) {
-                        openDrawer();
-                        return true;
-                    }
                     focusTile(lastFocused);
                     return true;
                 case KeyEvent.KEYCODE_DPAD_UP:
@@ -2701,9 +2411,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                     return true;
                 case KeyEvent.KEYCODE_DPAD_LEFT:
                 case KeyEvent.KEYCODE_DPAD_RIGHT:
-                    // Past the last item, Right hands focus to the scene column (F) instead of cycling.
-                    if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT && heroIndex == heroItems.size() - 1
-                            && focusSceneColumn()) return true;
                     if (heroItems.size() < 2) return true;   // nothing to cycle
                     heroIndex = (heroIndex + (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT ? 1 : heroItems.size() - 1)) % heroItems.size();
                     bindHero();
@@ -3165,10 +2872,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
         if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
             if (position < COLUMNS) {
-                if (drawerOpen) {                    // Up out of the drawer's first row closes it
-                    closeDrawer();
-                    return true;
-                }
                 if (!shelfOn) return false;                // dock row: let focus move to the top bar
                 focusShelf();
                 grid.playSoundEffect(SoundEffectConstants.NAVIGATION_UP);
@@ -3176,11 +2879,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             }
             target = position - COLUMNS;
         } else {
-            // fullscreen_drawer: Down from the dock row opens the drawer instead of the rows under it.
-            if (fullscreenDrawer && !drawerOpen && dockRow && position < COLUMNS) {
-                openDrawer();
-                return true;
-            }
             int lastRowStart = ((count - 1) / COLUMNS) * COLUMNS;
             if (position >= lastRowStart) {
                 if (adapter.isLibraryAt(count)) focusLibrary();
