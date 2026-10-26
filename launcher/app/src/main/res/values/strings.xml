@@ -153,4 +153,12 @@
     <!-- Cinematic top shelf (cinematic_home): the line under the focused dock app's name; %1$s is when it was
          last opened, e.g. "5 minutes ago" or "yesterday, 9:40 pm". -->
     <string name="last_opened">Last opened %1$s</string>
+
+    <string name="scene_curtain_title">Curtain</string>
+    <string name="scene_curtain_subtitle">Close the living-room sheers</string>
+    <string name="scene_movie_title">Movie night</string>
+    <string name="scene_movie_subtitle">Lights off \u00b7 TV wall strip on</string>
+    <string name="scene_curtain_toast">Closing the curtains\u2026</string>
+    <string name="scene_movie_toast">Movie mode on</string>
+    <string name="scene_failed_toast">Scene failed</string>
 </resources>
