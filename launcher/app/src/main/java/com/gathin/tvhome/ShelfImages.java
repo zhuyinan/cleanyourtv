@@ -50,6 +50,7 @@ final class ShelfImages {
 
     /** Shows uri in view, now from the cache or later from a background load. The view's tag guards reuse. */
     void load(String uri, ImageView view) {
+        if (uri != null && uri.equals(view.getTag()) && view.getDrawable() != null) return;   // already showing it: no blank-frame flicker on rebind
         view.setTag(uri);
         view.setImageBitmap(null);
         if (uri == null) return;
@@ -83,6 +84,7 @@ final class ShelfImages {
             return;
         }
         String key = uri == null ? null : uri + "#blur" + blurRadius;
+        if (key != null && key.equals(view.getTag()) && view.getDrawable() != null) return;   // already showing it: no blank-frame flicker on rebind
         view.setTag(key);
         view.setImageDrawable(null);
         if (uri == null) return;

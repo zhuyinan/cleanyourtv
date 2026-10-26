@@ -2467,11 +2467,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
         heroTitle.setText(name);
         heroLine.setText(item.progress > 0 ? (ep != null ? ep + " · 已看 " + item.progress + "%" : "已看 " + item.progress + "%") : (ep != null ? ep : ""));
-        heroPic.setImageDrawable(null);
         heroImages.load(item.image, heroPic, heroBlurRadius);
-        heroPoster.setImageDrawable(null);
         heroImages.load(item.image, heroPoster);
-        heroPoster.animate().alpha(0f).setDuration(0).start();
         heroPoster.animate().alpha(1f).setDuration(animations ? 160 : 0).start();
         FrameLayout.LayoutParams brlp = (FrameLayout.LayoutParams) heroBar.getLayoutParams();
         int min = (int) (3 * density);   // a show just started still shows a visible head of the bar
