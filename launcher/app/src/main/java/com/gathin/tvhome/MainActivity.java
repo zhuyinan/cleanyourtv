@@ -2282,7 +2282,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private ImageView heroPic, heroPoster;
     private TextView heroStand, heroTitle, heroLine;
     private View heroBar;
-    private LinearLayout heroDots;
+    private LinearLayout heroPosDots;
 
     /** Apple-style Continue Watching: one wide banner — the show's art blurred behind, its portrait poster
      *  standing centred on the right, the title/episode/progress on the left, position dots below. */
@@ -2384,13 +2384,13 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         card.addView(stand);
         column.addView(card);
 
-        heroDots = new LinearLayout(this);
+        heroPosDots = new LinearLayout(this);
         LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         dlp.topMargin = (int) (9 * density);
         dlp.leftMargin = (int) (4 * density);
-        heroDots.setLayoutParams(dlp);
-        heroDots.setOrientation(LinearLayout.HORIZONTAL);
-        column.addView(heroDots);
+        heroPosDots.setLayoutParams(dlp);
+        heroPosDots.setOrientation(LinearLayout.HORIZONTAL);
+        column.addView(heroPosDots);
 
         GradientDrawable ring = new GradientDrawable();
         ring.setCornerRadius(16 * density);
@@ -2451,7 +2451,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         LinearLayout.LayoutParams brlp = (LinearLayout.LayoutParams) heroBar.getLayoutParams();
         brlp.width = (int) (240 * density * Math.max(0, Math.min(100, item.progress)) / 100f);
         heroBar.setLayoutParams(brlp);
-        heroDots.removeAllViews();
+        heroPosDots.removeAllViews();
         for (int i = 0; i < heroItems.size(); i++) {
             View d = new View(this);
             GradientDrawable dd = new GradientDrawable();
@@ -2460,44 +2460,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams((int) (7 * density), (int) (7 * density));
             if (i > 0) plp.leftMargin = (int) (7 * density);
             d.setBackground(dd);
-            heroDots.addView(d, plp);
+            heroPosDots.addView(d, plp);
         }
     }
 
 
 
-    /** Puts the current item's art, title, episode/progress and dots into the hero card. */
-    private void bindHero() {
-        if (heroItems.isEmpty() || heroPic == null) return;
-        ShelfContent.Item item = heroItems.get(heroIndex);
-        String name = item.title, ep = null;
-        int dot = item.title.indexOf('·');
-        if (dot > 0) {
-            name = item.title.substring(0, dot);
-            ep = item.title.substring(dot + 1);
-        }
-        heroStand.setText(name);
-        heroTitle.setText(name);
-        heroLine.setText(item.progress > 0 ? (ep != null ? ep + " · 已看 " + item.progress + "%" : "已看 " + item.progress + "%") : (ep != null ? ep : ""));
-        heroPic.setImageDrawable(null);
-        heroImages.load(item.image, heroPic);
-        heroPic.animate().alpha(0f).setDuration(0).start();
-        heroPic.animate().alpha(1f).setDuration(animations ? 160 : 0).start();
-        LinearLayout.LayoutParams brlp = (LinearLayout.LayoutParams) heroBar.getLayoutParams();
-        brlp.width = (int) (220 * density * Math.max(0, Math.min(100, item.progress)) / 100f);
-        heroBar.setLayoutParams(brlp);
-        heroDots.removeAllViews();
-        for (int i = 0; i < heroItems.size(); i++) {
-            View d = new View(this);
-            GradientDrawable dd = new GradientDrawable();
-            dd.setShape(GradientDrawable.OVAL);
-            dd.setColor(i == heroIndex ? 0xFFFFFFFF : 0x47FFFFFF);
-            LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams((int) (7 * density), (int) (7 * density));
-            if (i > 0) plp.leftMargin = (int) (7 * density);
-            d.setBackground(dd);
-            heroDots.addView(d, plp);
-        }
-    }
 
     /** One program: a 16:9 picture (the title stands in until it loads), a progress line, the title below on focus. */
     private View shelfCard(ShelfContent.Item item, int index, int count) {
