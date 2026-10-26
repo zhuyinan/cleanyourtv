@@ -83,6 +83,7 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import java.io.File;
 import java.io.IOException;
+import java.net.HttpURLConnection;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -406,6 +407,35 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
     };
 
+    /** Scene cards (config.json scene_curtain_webhook + scene_movie_webhook): two small cards under the top
+     *  buttons that POST their webhook when pressed. Unless BOTH keys are set, the panel stays gone and the
+     *  home is exactly the stock one. */
+    private void setupScenePanel(Config cfg) {
+        if (cfg.sceneCurtainWebhook.isEmpty() || cfg.sceneMovieWebhook.isEmpty()) return;
+        findViewById(R.id.scenePanel).setVisibility(View.VISIBLE);
+        sceneWebhook(findViewById(R.id.sceneCurtainCard), cfg.sceneCurtainWebhook);
+        sceneWebhook(findViewById(R.id.sceneMovieCard), cfg.sceneMovieWebhook);
+    }
+
+    /** Fires a card's webhook in the background (fire-and-forget, 3 s timeouts) and toasts the outcome. */
+    private void sceneWebhook(View card, String url) {
+        card.setOnClickListener(v -> new Thread(() -> {
+            boolean ok = false;
+            try {
+                HttpURLConnection conn = (HttpURLConnection) new java.net.URL(url).openConnection();
+                conn.setConnectTimeout(3000);
+                conn.setReadTimeout(3000);
+                conn.setRequestMethod("POST");
+                ok = conn.getResponseCode() >= 200 && conn.getResponseCode() < 300;
+                conn.disconnect();
+            } catch (Exception ignored) {
+            }
+            final boolean sent = ok;
+            runOnUiThread(() -> Toast.makeText(this, sent ? R.string.scene_sent : R.string.scene_failed,
+                    Toast.LENGTH_SHORT).show());
+        }, "scene-webhook").start());
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -445,6 +475,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         sourcePanelAction = cfg.sourcePanelAction;
         sourcePanelExtra = cfg.sourcePanelExtra;
         coocaaSources = cfg.coocaaSources;
+        setupScenePanel(cfg);
 
         root = findViewById(R.id.root);
         root.setBackgroundColor(cfg.backgroundColor);

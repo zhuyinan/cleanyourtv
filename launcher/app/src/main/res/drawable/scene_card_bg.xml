@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Scene card background: dark translucent rounded rectangle (see scenePanel in activity_main.xml). -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="#CC1A1A1A" />
+    <corners android:radius="10dp" />
+</shape>

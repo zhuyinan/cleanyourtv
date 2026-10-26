@@ -4,6 +4,12 @@
     <string name="inputs">Inputs</string>
     <string name="wifi">Wi-Fi</string>
     <string name="settings">Settings</string>
+    <string name="scene_curtain_title">Curtain</string>
+    <string name="scene_curtain_sub">Close living-room sheers</string>
+    <string name="scene_movie_title">Movie night</string>
+    <string name="scene_movie_sub">Lights off · TV wall strip on</string>
+    <string name="scene_sent">Scene triggered</string>
+    <string name="scene_failed">Scene failed</string>
     <string name="choose_input">Inputs</string>
     <string name="connected">Connected</string>
     <string name="standby">Standby</string>
