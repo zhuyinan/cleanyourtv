@@ -2344,14 +2344,13 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         LinearLayout.LayoutParams llp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         llp.topMargin = (int) (7 * density);
         meta.addView(heroLine, llp);
-        LinearLayout track = new LinearLayout(this);
-        track.setOrientation(LinearLayout.HORIZONTAL);
+        FrameLayout track = new FrameLayout(this);   // bar drawn ON the track from the left, never beside it
         View trackBg = new View(this);   // a faint track: the white bar must be the only thing that reads as progress
         trackBg.setBackgroundColor(0x26FFFFFF);
-        track.addView(trackBg, new LinearLayout.LayoutParams((int) (170 * density), (int) (4 * density)));
+        track.addView(trackBg, new FrameLayout.LayoutParams((int) (170 * density), (int) (4 * density)));
         heroBar = new View(track.getContext());
         heroBar.setBackgroundColor(0xFFFFFFFF);
-        track.addView(heroBar, new LinearLayout.LayoutParams(0, (int) (4 * density)));
+        track.addView(heroBar, new FrameLayout.LayoutParams(0, (int) (4 * density)));
         LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         tlp.topMargin = (int) (12 * density);
         meta.addView(track, tlp);
@@ -2438,7 +2437,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         heroImages.load(item.image, heroPoster);
         heroPoster.animate().alpha(0f).setDuration(0).start();
         heroPoster.animate().alpha(1f).setDuration(animations ? 160 : 0).start();
-        LinearLayout.LayoutParams brlp = (LinearLayout.LayoutParams) heroBar.getLayoutParams();
+        FrameLayout.LayoutParams brlp = (FrameLayout.LayoutParams) heroBar.getLayoutParams();
         int min = (int) (3 * density);   // a show just started still shows a visible head of the bar
         brlp.width = item.progress > 0 ? (int) Math.max(min, 170 * density * Math.min(100, item.progress) / 100f) : 0;
         heroBar.setLayoutParams(brlp);
