@@ -2043,11 +2043,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private static final int SHELF_CARD_W_DP = 96;
     private static final int SHELF_CARD_H_DP = 144;
     private static final int SHELF_HEIGHT_DP = 192;   // the 3-card rail: card (2:3 portrait), its zoom and the title line
-    private static final int HERO_CARD_W_DP = 620;
-    private static final int HERO_CARD_H_DP = 235;   // a wide banner: blurred art behind, the poster standing on the right
-    private static final int HERO_POSTER_W_DP = 145;
-    private static final int HERO_POSTER_H_DP = 218;   // 2:3 portrait, vertically centred and fully visible
-    private static final int HERO_SHELF_HEIGHT_DP = 265;   // hero card + the dots line under it
+    private static final int HERO_CARD_W_DP = 360;   // half the screen: the other half stays free for later
+    private static final int HERO_CARD_H_DP = 225;
+    private static final int HERO_POSTER_W_DP = 115;
+    private static final int HERO_POSTER_H_DP = 172;   // 2:3 portrait, vertically centred and fully visible
+    private static final int HERO_SHELF_HEIGHT_DP = 255;   // hero card + the dots line under it
     private static final int SHELF_MAX = 5;   // the shelf shows at most the five most recently watched things
     private static final int HERO_BLUR_DEFAULT = 12;   // config.json hero_blur: 0-25, small enough to still recognise the art
 
@@ -2280,7 +2280,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     /** The focused hero card's views, rebound in place when left/right cycles to another item. */
     private ImageView heroPic, heroPoster;
-    private TextView heroStand, heroTitle, heroLine;
+    private TextView heroTitle, heroLine;
     private View heroBar;
     private LinearLayout heroPosDots;
 
@@ -2304,15 +2304,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         card.setClipToOutline(true);
         card.setFocusable(true);
 
-        heroStand = new TextView(this);
-        heroStand.setTextColor(0xB3FFFFFF);
-        heroStand.setTextSize(18);
-        heroStand.setGravity(Gravity.CENTER);
-        heroStand.setPadding((int) (16 * density), 0, (int) (16 * density), 0);
-        heroStand.setMaxLines(2);
-        heroStand.setEllipsize(TextUtils.TruncateAt.END);
-        card.addView(heroStand, new FrameLayout.LayoutParams(w, h));
-
         heroPic = new ImageView(this);   // the blurred backdrop: the same art, softened so it sets the mood
         heroPic.setScaleType(ImageView.ScaleType.CENTER_CROP);
         card.addView(heroPic, new FrameLayout.LayoutParams(w, h));
@@ -2326,8 +2317,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         LinearLayout meta = new LinearLayout(this);
         meta.setOrientation(LinearLayout.VERTICAL);
         meta.setGravity(Gravity.CENTER_VERTICAL);
-        FrameLayout.LayoutParams mlp = new FrameLayout.LayoutParams((int) (320 * density), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.START);
-        mlp.leftMargin = (int) (26 * density);
+        FrameLayout.LayoutParams mlp = new FrameLayout.LayoutParams((int) (196 * density), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.START);
+        mlp.leftMargin = (int) (22 * density);
         meta.setLayoutParams(mlp);
         TextView cap = new TextView(this);
         cap.setText("继续观看");
@@ -2337,7 +2328,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         meta.addView(cap);
         heroTitle = new TextView(this);
         heroTitle.setTextColor(0xFFFFFFFF);
-        heroTitle.setTextSize(24);
+        heroTitle.setTextSize(21);
         heroTitle.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
         heroTitle.setMaxLines(1);
         heroTitle.setEllipsize(TextUtils.TruncateAt.END);
@@ -2346,7 +2337,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         meta.addView(heroTitle, tlp0);
         heroLine = new TextView(this);
         heroLine.setTextColor(0xFFCFD6E4);
-        heroLine.setTextSize(13);
+        heroLine.setTextSize(12);
         heroLine.setMaxLines(2);
         heroLine.setEllipsize(TextUtils.TruncateAt.END);
         heroLine.setLineSpacing(2 * density, 1f);
@@ -2355,9 +2346,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         meta.addView(heroLine, llp);
         LinearLayout track = new LinearLayout(this);
         track.setOrientation(LinearLayout.HORIZONTAL);
-        View trackBg = new View(this);
-        trackBg.setBackgroundColor(0x47FFFFFF);
-        track.addView(trackBg, new LinearLayout.LayoutParams((int) (240 * density), (int) (4 * density)));
+        View trackBg = new View(this);   // a faint track: the white bar must be the only thing that reads as progress
+        trackBg.setBackgroundColor(0x26FFFFFF);
+        track.addView(trackBg, new LinearLayout.LayoutParams((int) (170 * density), (int) (4 * density)));
         heroBar = new View(track.getContext());
         heroBar.setBackgroundColor(0xFFFFFFFF);
         track.addView(heroBar, new LinearLayout.LayoutParams(0, (int) (4 * density)));
@@ -2439,7 +2430,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             name = item.title.substring(0, dot);
             ep = item.title.substring(dot + 1);
         }
-        heroStand.setText(name);
         heroTitle.setText(name);
         heroLine.setText(item.progress > 0 ? (ep != null ? ep + " · 已看 " + item.progress + "%" : "已看 " + item.progress + "%") : (ep != null ? ep : ""));
         heroPic.setImageDrawable(null);
@@ -2449,7 +2439,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         heroPoster.animate().alpha(0f).setDuration(0).start();
         heroPoster.animate().alpha(1f).setDuration(animations ? 160 : 0).start();
         LinearLayout.LayoutParams brlp = (LinearLayout.LayoutParams) heroBar.getLayoutParams();
-        brlp.width = (int) (240 * density * Math.max(0, Math.min(100, item.progress)) / 100f);
+        int min = (int) (3 * density);   // a show just started still shows a visible head of the bar
+        brlp.width = item.progress > 0 ? (int) Math.max(min, 170 * density * Math.min(100, item.progress) / 100f) : 0;
         heroBar.setLayoutParams(brlp);
         heroPosDots.removeAllViews();
         for (int i = 0; i < heroItems.size(); i++) {
