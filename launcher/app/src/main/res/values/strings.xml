@@ -8,6 +8,9 @@
     <string name="scene_curtain_sub">Close living-room sheers</string>
     <string name="scene_movie_title">Movie night</string>
     <string name="scene_movie_sub">Lights off · TV wall strip on</string>
+    <string name="scene_switch2_title">Switch 2</string>
+    <string name="scene_switch2_sub">HDMI input</string>
+    <string name="hdmi_input_not_found">HDMI input not found</string>
     <string name="scene_sent">Scene triggered</string>
     <string name="scene_failed">Scene failed</string>
     <string name="choose_input">Inputs</string>

@@ -102,6 +102,11 @@
          content:// URI goes to its channel player, which resumes the last film it played. Leave empty to omit. -->
     <string name="input_uri_scheme" translatable="false"></string>
 
+    <!-- Scene card "Switch 2": substring matched case-insensitively against the TvInputManager input ids to find
+         the HDMI port the console is on; the card then opens that input the way the Inputs menu's HDMI rows do
+         (input_action / input_uri_scheme above). "HDMI1" also matches "HDMI_1"-style ids. Empty hides the card. -->
+    <string name="scene_switch2_input" translatable="false">HDMI1</string>
+
     <!-- Whether HomeKeyService and InputKeyService actually request key filtering (config.xml or a theme's
          "key_filter"). Some firmware (TCL Google TV on Android 12) drops key auto-repeat once ANY service
          filters keys, so long-pressing volume only steps once: set false and the service keeps running but

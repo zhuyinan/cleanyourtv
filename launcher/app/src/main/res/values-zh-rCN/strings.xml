@@ -8,6 +8,9 @@
     <string name="scene_curtain_sub">关闭客厅梦幻帘</string>
     <string name="scene_movie_title">观影</string>
     <string name="scene_movie_sub">关灯 · 开电视墙灯带</string>
+    <string name="scene_switch2_title">Switch 2</string>
+    <string name="scene_switch2_sub">HDMI 输入</string>
+    <string name="hdmi_input_not_found">未找到HDMI输入</string>
     <string name="scene_sent">场景已触发</string>
     <string name="scene_failed">场景执行失败</string>
     <string name="home_settings">选择默认桌面</string>

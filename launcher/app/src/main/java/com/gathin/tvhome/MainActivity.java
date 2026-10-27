@@ -407,14 +407,38 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
     };
 
-    /** Scene cards (config.json scene_curtain_webhook + scene_movie_webhook): two small cards under the top
-     *  buttons that POST their webhook when pressed. Unless BOTH keys are set, the panel stays gone and the
-     *  home is exactly the stock one. */
+    /** Scene cards (config.json scene_curtain_webhook + scene_movie_webhook, config.xml scene_switch2_input):
+     *  small cards under the top buttons — the two webhooks POST when pressed, "Switch 2" opens its HDMI input.
+     *  Cards whose key is unset are hidden one by one; with none set the panel stays gone and the home is stock. */
     private void setupScenePanel(Config cfg) {
-        if (cfg.sceneCurtainWebhook.isEmpty() || cfg.sceneMovieWebhook.isEmpty()) return;
+        boolean curtain = !cfg.sceneCurtainWebhook.isEmpty(), movie = !cfg.sceneMovieWebhook.isEmpty();
+        boolean switch2 = !cfg.sceneSwitch2Input.isEmpty();
+        if (!(curtain && movie) && !switch2) return;
         findViewById(R.id.scenePanel).setVisibility(View.VISIBLE);
-        sceneWebhook(findViewById(R.id.sceneCurtainCard), cfg.sceneCurtainWebhook);
-        sceneWebhook(findViewById(R.id.sceneMovieCard), cfg.sceneMovieWebhook);
+        if (curtain) sceneWebhook(findViewById(R.id.sceneCurtainCard), cfg.sceneCurtainWebhook);
+        else findViewById(R.id.sceneCurtainCard).setVisibility(View.GONE);
+        if (movie) sceneWebhook(findViewById(R.id.sceneMovieCard), cfg.sceneMovieWebhook);
+        else findViewById(R.id.sceneMovieCard).setVisibility(View.GONE);
+        if (switch2) findViewById(R.id.sceneSwitch2Card).setOnClickListener(
+                v -> openSwitch2Input(cfg.sceneSwitch2Input));
+    }
+
+    /** Switch 2 card: opens the first passthrough input whose TvInputManager id contains `want`
+     *  (case-insensitive, so "HDMI1" also matches "HDMI_1"), the same way the Inputs menu's HDMI rows do
+     *  (openInput: input_action / input_uri_scheme). No match means there is no port to switch to. */
+    private void openSwitch2Input(String want) {
+        String needle = want.toLowerCase(Locale.ROOT);
+        TvInputManager tim = (TvInputManager) getSystemService(TV_INPUT_SERVICE);
+        if (tim != null) {
+            for (TvInputInfo info : tim.getTvInputList()) {
+                String id = info.getId();
+                if (info.isPassthroughInput() && id.toLowerCase(Locale.ROOT).contains(needle)) {
+                    openInput(id);
+                    return;
+                }
+            }
+        }
+        Toast.makeText(this, R.string.hdmi_input_not_found, Toast.LENGTH_SHORT).show();
     }
 
     /** Fires a card's webhook in the background (fire-and-forget, 3 s timeouts) and toasts the outcome. */

@@ -252,6 +252,9 @@ final class Config {
     final String sceneCurtainWebhook;
     /** Scene card "Movie night" webhook (config.json scene_movie_webhook); the scene panel needs both this and the curtain webhook set. */
     final String sceneMovieWebhook;
+    /** Scene card "Switch 2" HDMI input match (config.xml scene_switch2_input / config.json): substring matched
+     *  case-insensitively against TvInputManager input ids to find the port the console is on; empty hides the card. */
+    final String sceneSwitch2Input;
 
     private Config(List<String> dockApps, boolean fillDock, List<String> hiddenApps, List<String> libraryApps, String liveTvPackage,
                    String liveTvAction, String liveTvInputId, Map<String, String> launchActions, Map<String, String> appLabels,
@@ -267,7 +270,7 @@ final class Config {
                    boolean keyFilter, boolean dockGlass, String glowStyle, boolean wallpaperCaptions,
                    boolean handleViewInputs, boolean tileMenu, boolean dockEvenPadding, boolean dockBand, boolean cinematicDots, boolean cinematicWhiteFocus, boolean wifiStatusColor, int cinematicScrim, int cinematicArt,
                    Map<String, Set<String>> wallpaperMoods, boolean gamepadPassthrough, boolean consumeVolumeKeys, boolean powerOnHome, boolean wifiStatusWarnings, List<String> topBarApps, boolean showGreeting, boolean headerWhite, boolean clockWallpaper, int clockWallpaperDim, boolean clockGlow, String glassStyle, boolean singleRow, boolean dockBandAll, boolean lunarDate, int lunarUtcOffset, boolean dateBelowClock,
-                   String sceneCurtainWebhook, String sceneMovieWebhook) {
+                   String sceneCurtainWebhook, String sceneMovieWebhook, String sceneSwitch2Input) {
         this.handleViewInputs = handleViewInputs;
         this.tileMenu = tileMenu;
         this.inputKeycodes = inputKeycodes;
@@ -369,6 +372,7 @@ final class Config {
         this.dockBandAll = dockBandAll;
         this.sceneCurtainWebhook = sceneCurtainWebhook;
         this.sceneMovieWebhook = sceneMovieWebhook;
+        this.sceneSwitch2Input = sceneSwitch2Input;
         this.glowStyle = glowStyle(glowStyle);
         this.wallpaperCaptions = wallpaperCaptions;
         this.glassStyle = glassStyle(glassStyle);
@@ -410,6 +414,7 @@ final class Config {
         boolean coocaaSources = res.getBoolean(R.bool.coocaa_sources);
         String inputAction = res.getString(R.string.input_action).trim();
         String inputUriScheme = res.getString(R.string.input_uri_scheme).trim();
+        String sceneSwitch2Input = res.getString(R.string.scene_switch2_input).trim();
         int columns = res.getInteger(R.integer.columns);
         int rowsBelow = res.getInteger(R.integer.rows_below_dock);
         boolean animations = res.getBoolean(R.bool.animations);
@@ -588,6 +593,7 @@ final class Config {
             dockBandAll = bool(json, "dock_band_all", dockBandAll);
             sceneCurtain = string(json, "scene_curtain_webhook", sceneCurtain);
             sceneMovie = string(json, "scene_movie_webhook", sceneMovie);
+            sceneSwitch2Input = string(json, "scene_switch2_input", sceneSwitch2Input).trim();
             glowStyle = string(json, "glow_style", glowStyle);
             glassStyle = string(json, "glass_style", glassStyle);
         }
@@ -650,7 +656,7 @@ final class Config {
                 dockBand, cinematicDots, cinematicWhiteFocus, wifiStatusColor, cinematicScrim, cinematicArt, wallpaperMoods, gamepadPassthrough,
                 consumeVolumeKeys, powerOnHome, wifiStatusWarnings, topBarApps, showGreeting, headerWhite, clockWallpaper,
                 Math.max(0, Math.min(90, clockWallpaperDim)), clockGlow, glassStyle, singleRow && dockRow, dockBandAll, lunar, lunarOffset,
-                dateBelowClock, sceneCurtain, sceneMovie);
+                dateBelowClock, sceneCurtain, sceneMovie, sceneSwitch2Input);
     }
 
     /**
