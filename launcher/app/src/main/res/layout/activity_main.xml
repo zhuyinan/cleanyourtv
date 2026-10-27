@@ -534,7 +534,7 @@
             android:focusable="true"
             android:clickable="true"
             android:nextFocusUp="@id/sceneMovieCard"
-            android:nextFocusDown="@id/sceneCurtainCard">
+            android:nextFocusDown="@id/grid">
 
             <View
                 android:layout_width="3dp"

@@ -2461,11 +2461,18 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                     focusTile(lastFocused);
                     return true;
                 case KeyEvent.KEYCODE_DPAD_UP:
-                    View pill = btnInputs.getVisibility() == View.VISIBLE ? btnInputs : findViewById(R.id.btnWifi);
-                    pill.requestFocus();
+                    findViewById(R.id.btnSettings).requestFocus();
                     return true;
                 case KeyEvent.KEYCODE_DPAD_LEFT:
                 case KeyEvent.KEYCODE_DPAD_RIGHT:
+                    // At the last poster with the scene cards beside us, RIGHT hands focus to them
+                    // (their LEFT comes back through the stock beam search); otherwise keep cycling.
+                    if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT
+                            && !heroItems.isEmpty() && heroIndex == heroItems.size() - 1
+                            && findViewById(R.id.scenePanel).getVisibility() == View.VISIBLE
+                            && findViewById(R.id.sceneCurtainCard).requestFocus()) {
+                        return true;
+                    }
                     if (heroItems.size() < 2) return true;   // nothing to cycle
                     heroIndex = (heroIndex + (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT ? 1 : heroItems.size() - 1)) % heroItems.size();
                     bindHero();
